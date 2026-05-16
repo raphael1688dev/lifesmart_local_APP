@@ -10,6 +10,13 @@ from .api import LifeSmartAPI
 
 _LOGGER = logging.getLogger(__name__)
 
+def _has_devices(msg) -> bool:
+    if isinstance(msg, list):
+        return bool(msg)
+    if isinstance(msg, dict):
+        return any(isinstance(v, dict) for v in msg.values())
+    return False
+
 def validate_host(host):
     try:
         ipaddress.ip_address(host)
@@ -76,11 +83,11 @@ class LifeSmartConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 if (
                     isinstance(discovery, dict)
                     and discovery.get("code") == 0
-                    and isinstance(discovery.get("msg"), list)
-                    and discovery["msg"]
+                    and _has_devices(discovery.get("msg"))
                 ):
                     user_input["local_port"] = api.local_port
                     return self.async_create_entry(title="LifeSmart Hub", data=user_input)
+                _LOGGER.warning("Discovery response: %s", discovery)
                 errors["base"] = "no_devices"
             except Exception:
                 errors["base"] = "cannot_connect"
@@ -113,13 +120,13 @@ class LifeSmartConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 if (
                     isinstance(discovery, dict)
                     and discovery.get("code") == 0
-                    and isinstance(discovery.get("msg"), list)
-                    and discovery["msg"]
+                    and _has_devices(discovery.get("msg"))
                 ):
                     user_input["local_port"] = api.local_port
                     return self.async_update_reload_and_abort(
                         entry, data={**entry.data, **user_input}
                     )
+                _LOGGER.warning("Discovery response: %s", discovery)
                 errors["base"] = "no_devices"
             except Exception:
                 errors["base"] = "cannot_connect"
