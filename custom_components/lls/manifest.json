@@ -1,13 +1,13 @@
 {
     "domain": "lls",
-    "name": "LifeSmart Local",
+    "name": "Local LifeSmart (LLS)",
     "documentation": "https://www.home-assistant.io/integrations/",
     "codeowners": [],
     "config_flow": true,
     "options": true,
     "dependencies": [],
     "requirements": [],
-    "version": "0.2.0",
+    "version": "20260516r4",
     "iot_class": "local_push"
   }
   
