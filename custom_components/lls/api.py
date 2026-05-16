@@ -24,6 +24,7 @@ class LifeSmartAPI:
         self._pending: Dict[int, asyncio.Future] = {}
         self._report_listeners: set[Callable[[Dict[str, Any]], None]] = set()
         self._state_listeners: Dict[Tuple[str, str], set[Callable[[Any], None]]] = {}
+        self.ts_offset: int = 0
 
     def _create_signature(self, obj: str, args: Dict[str, Any], ts: int) -> str:
         sortable_items = []
@@ -36,8 +37,15 @@ class LifeSmartAPI:
         base_string = f"obj:{obj},{args_string},ts:{ts},model:{self.model},token:{self.token}"
         return hashlib.md5(base_string.encode()).hexdigest()
 
+    def apply_ts_from_response(self, response: Dict[str, Any]) -> None:
+        """Calculate ts_offset from a code-101 hub response."""
+        hub_ts = response.get("msg", {}).get("ts") if isinstance(response.get("msg"), dict) else None
+        if isinstance(hub_ts, int):
+            self.ts_offset = hub_ts - int(time.time())
+            _LOGGER.debug("ts_offset set to %d seconds", self.ts_offset)
+
     def _create_message(self, obj: str, args: Dict[str, Any], pkg_type: int, msg_id: int) -> bytes:
-        ts = int(time.time())
+        ts = int(time.time()) + self.ts_offset
         sign = self._create_signature(obj, args, ts)
 
         body = {

@@ -40,8 +40,9 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         if isinstance(discovery, dict) and discovery.get("code") == 101:
             _LOGGER.warning(
                 "LifeSmart hub returned code 101 (timestamp rejected). "
-                "Retrying — ensure the host clock is within 5 minutes of the hub clock."
+                "Adjusting ts_offset from hub response and retrying."
             )
+            api.apply_ts_from_response(discovery)
             discovery = await api.discover_devices()
 
         _LOGGER.debug("Raw discovery response: %s", discovery)

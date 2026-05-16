@@ -77,6 +77,9 @@ class LifeSmartConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 try:
                     await api.async_start()
                     discovery = await api.discover_devices()
+                    if isinstance(discovery, dict) and discovery.get("code") == 101:
+                        api.apply_ts_from_response(discovery)
+                        discovery = await api.discover_devices()
                 finally:
                     await api.async_stop()
 
@@ -88,7 +91,10 @@ class LifeSmartConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                     user_input["local_port"] = api.local_port
                     return self.async_create_entry(title="LifeSmart Hub", data=user_input)
                 _LOGGER.warning("Discovery response: %s", discovery)
-                errors["base"] = "no_devices"
+                if isinstance(discovery, dict) and discovery.get("code") == 101:
+                    errors["base"] = "clock_skew"
+                else:
+                    errors["base"] = "no_devices"
             except Exception:
                 errors["base"] = "cannot_connect"
 
@@ -114,6 +120,9 @@ class LifeSmartConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 try:
                     await api.async_start()
                     discovery = await api.discover_devices()
+                    if isinstance(discovery, dict) and discovery.get("code") == 101:
+                        api.apply_ts_from_response(discovery)
+                        discovery = await api.discover_devices()
                 finally:
                     await api.async_stop()
 
@@ -127,7 +136,10 @@ class LifeSmartConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                         entry, data={**entry.data, **user_input}
                     )
                 _LOGGER.warning("Discovery response: %s", discovery)
-                errors["base"] = "no_devices"
+                if isinstance(discovery, dict) and discovery.get("code") == 101:
+                    errors["base"] = "clock_skew"
+                else:
+                    errors["base"] = "no_devices"
             except Exception:
                 errors["base"] = "cannot_connect"
 
