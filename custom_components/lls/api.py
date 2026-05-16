@@ -33,8 +33,13 @@ class LifeSmartAPI:
                 continue
             sortable_items.append((k, v))
         sorted_args = sorted(sortable_items)
-        args_string = ",".join(f"{k}:{v}" for k, v in sorted_args)
-        base_string = f"obj:{obj},{args_string},ts:{ts},model:{self.model},token:{self.token}"
+        parts = [f"obj:{obj}"]
+        for k, v in sorted_args:
+            parts.append(f"{k}:{v}")
+        parts.append(f"ts:{ts}")
+        parts.append(f"model:{self.model}")
+        parts.append(f"token:{self.token}")
+        base_string = ",".join(parts)
         return hashlib.md5(base_string.encode()).hexdigest()
 
     def apply_ts_from_response(self, response: Dict[str, Any]) -> None:
