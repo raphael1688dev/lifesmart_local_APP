@@ -25,6 +25,7 @@
             "invalid_model": "Invalid hub model",
             "invalid_token": "Invalid token format",
             "cannot_connect": "Failed to connect to the hub",
+            "clock_skew": "Hub rejected the request (code 101): clock difference too large. Auto-correction failed — sync your HA system clock with NTP.",
             "no_devices": "No devices found on the hub",
             "invalid_config": "Invalid configuration"
         },
