@@ -1,5 +1,4 @@
 {
-  "name": "SmartIR(Mod)",
-  "homeassistant": "2026.5.0",
-  "persistent_directory": "codes"
+  "name": "Local LifeSmart",
+  "homeassistant": "2026.5.0"
 }
