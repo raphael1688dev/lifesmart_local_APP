@@ -1,0 +1,13 @@
+send_keys:
+  description: Send IR key(s) to a remote.
+  fields:
+    remote_id:
+      description: Remote ID returned by the hub.
+      example: "AI_IR_xxxx_xxxxxxxx"
+      selector:
+        text:
+    keys:
+      description: One key or a list of keys to send.
+      example: '["power","vol_up"]'
+      selector:
+        text:
