@@ -3,7 +3,11 @@ import logging
 from datetime import timedelta
 from typing import Any, Callable, Dict, Optional, List
 import asyncio
-from homeassistant.components.sensor import SensorEntity
+from homeassistant.components.sensor import (
+    SensorDeviceClass,
+    SensorEntity,
+    SensorStateClass,
+)
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
@@ -60,6 +64,23 @@ async def async_setup_entry(
                             api=api,
                             device=device,
                             idx="P8"
+                        )
+                    )
+                elif (
+                    isinstance(device.get("devtype"), str)
+                    and device["devtype"].startswith(("SL_SW_ND", "SL_MC_ND"))
+                    and "data" in device
+                    and "V" in device["data"]
+                ):
+                    # §6.3.2 Stellar/Starry/Polar Switch (SL_SW_ND*)
+                    # §6.3.5 Stellar/Starry/Polar Multi-control Accessory (SL_MC_ND*)
+                    # V idx = battery level, range 0-100 %, read-only
+                    _LOGGER.debug("Found switch battery sensor in %s", device.get('name'))
+                    sensors.append(
+                        LifeSmartBatterySensor(
+                            api=api,
+                            device=device,
+                            idx="V"
                         )
                     )
             except KeyError as e:
@@ -144,8 +165,12 @@ class LifeSmartTemperatureSensor(LifeSmartBaseSensor):
     def __init__(self, api: Any, device: Dict[str, Any], idx: str) -> None:
         super().__init__(api, device, idx)
         try:
-            self._attr_name = device.get('name', 'Temperature Sensor')
+            # HA 2026.5 naming: _attr_name = function only;
+            # device name is provided by DeviceInfo (base class).
+            self._attr_name = "Temperature"
             self._attr_unique_id = f"temp_{device['me']}"
+            self._attr_device_class = SensorDeviceClass.TEMPERATURE
+            self._attr_state_class = SensorStateClass.MEASUREMENT
 
             raw_v = device.get("data", {}).get(idx, {}).get("v")
             if raw_v is not None:
@@ -196,10 +221,14 @@ class LifeSmartBatterySensor(LifeSmartBaseSensor):
     def __init__(self, api: Any, device: Dict[str, Any] , idx: str) -> None:
         super().__init__(api, device, idx)
         try:
-            self._attr_name = f"{device.get('name', 'MINS Curtain')} Battery"
+            # HA 2026.5 naming: _attr_name = function only;
+            # device name is provided by DeviceInfo (base class).
+            self._attr_name = "Battery"
             self._attr_unique_id = f"battery_{device['me']}"
+            self._attr_device_class = SensorDeviceClass.BATTERY
+            self._attr_state_class = SensorStateClass.MEASUREMENT
             self._attr_native_unit_of_measurement = PERCENTAGE
-            self._attr_native_value = device.get("data", {}).get("P8", {}).get("v")
+            self._attr_native_value = device.get("data", {}).get(idx, {}).get("v")
             device_type = device.get('devtype')
             hub_id = device.get('agt', '')
             device_id = device['me']
