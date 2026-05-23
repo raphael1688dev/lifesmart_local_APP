@@ -13,7 +13,7 @@ API_VERSION = 1
 REMARK = "JL"
 
 # Supported Platforms (對應 HA 的實體類別)
-PLATFORMS = ["switch", "sensor", "cover", "remote"]
+PLATFORMS = ["switch", "sensor", "binary_sensor", "cover", "remote"]
 
 # Command Types
 CMD_GET = 1    # Query command

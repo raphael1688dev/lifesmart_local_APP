@@ -255,6 +255,10 @@ def _extract_state_changes(message: Dict[str, Any]) -> list[tuple[str, str, Any]
                     continue
                 if isinstance(v, dict) and isinstance(v.get("v"), (int, float)):
                     out.append((me, str(k), v["v"]))
+                elif k == "stat" and isinstance(v, (int, float)):
+                    # Device-level connectivity status (LI §4 / §6.1).
+                    # Dispatched as virtual idx "stat" for binary_sensor consumers.
+                    out.append((me, "stat", v))
 
     return out
 

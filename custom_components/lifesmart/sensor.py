@@ -11,9 +11,13 @@ from homeassistant.components.sensor import (
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
-from homeassistant.helpers.entity import DeviceInfo
+from homeassistant.helpers.entity import DeviceInfo, EntityCategory
 from homeassistant.helpers.event import async_track_time_interval
-from homeassistant.const import UnitOfTemperature, PERCENTAGE
+from homeassistant.const import (
+    PERCENTAGE,
+    SIGNAL_STRENGTH_DECIBELS_MILLIWATT,
+    UnitOfTemperature,
+)
 from .const import DOMAIN, CMD_GET, MANUFACTURER
 from . import generate_entity_id
 _LOGGER = logging.getLogger(__name__)
@@ -82,6 +86,15 @@ async def async_setup_entry(
                             device=device,
                             idx="V"
                         )
+                    )
+
+                # Universal: signal strength (LI §6.1 common attribute `lDbm`).
+                # Independent `if` — coexists with the elif chain above so a
+                # device can have e.g. both a Temperature sensor and a Signal sensor.
+                if "lDbm" in device:
+                    _LOGGER.debug("Found signal sensor in %s", device.get('name'))
+                    sensors.append(
+                        LifeSmartSignalSensor(api=api, device=device)
                     )
             except KeyError as e:
                 _LOGGER.error("Missing required device data: %s", e)
@@ -259,3 +272,53 @@ class LifeSmartBatterySensor(LifeSmartBaseSensor):
         self._attr_native_value = int(val)
         if self.hass:
             self.hass.async_create_task(self._async_write_state())
+
+
+class LifeSmartSignalSensor(LifeSmartBaseSensor):
+    """RF signal strength of the sub-device (LI §6.1 common attribute `lDbm`).
+
+    lDbm is reported at the device level (not under `data[idx]`), already in dBm,
+    available for both battery-powered and mains-powered devices. No state listener
+    is registered (idx=None) — polling-only via periodic `ep` GET.
+    """
+
+    _attr_name: str
+    _attr_unique_id: str
+    _attr_native_value: Optional[int]
+    _attr_native_unit_of_measurement: str
+
+    def __init__(self, api: Any, device: Dict[str, Any]) -> None:
+        super().__init__(api, device, idx=None)
+        try:
+            # HA 2026.5 naming: function only; device name from DeviceInfo.
+            self._attr_name = "Signal strength"
+            self._attr_unique_id = f"signal_{device['me']}"
+            self._attr_device_class = SensorDeviceClass.SIGNAL_STRENGTH
+            self._attr_state_class = SensorStateClass.MEASUREMENT
+            self._attr_native_unit_of_measurement = SIGNAL_STRENGTH_DECIBELS_MILLIWATT
+            self._attr_entity_category = EntityCategory.DIAGNOSTIC
+            raw = device.get("lDbm")
+            self._attr_native_value = int(raw) if isinstance(raw, (int, float)) else None
+            device_type = device.get('devtype')
+            hub_id = device.get('agt', '')
+            device_id = device['me']
+            # Virtual idx "signal" only feeds entity_id slug, not state listener.
+            self.entity_id = (
+                f"sensor.{generate_entity_id(device_type, hub_id, device_id, 'signal')}"
+            )
+        except KeyError as e:
+            _LOGGER.error("Missing required signal sensor field: %s", e)
+            raise
+
+    async def _async_update(self, *_: Any) -> None:
+        """Refresh lDbm via ep GET (device-level common attribute)."""
+        args: Dict[str, Any] = {"me": self._device["me"]}
+        try:
+            response: Dict[str, Any] = await self._api.send_command("ep", args, CMD_GET)
+            if response.get("code") == 0 and isinstance(response.get("msg"), dict):
+                raw = response["msg"].get("lDbm")
+                if isinstance(raw, (int, float)):
+                    self._attr_native_value = int(raw)
+                    self.async_write_ha_state()
+        except Exception as e:
+            _LOGGER.error("Unexpected error updating signal sensor: %s", e)
