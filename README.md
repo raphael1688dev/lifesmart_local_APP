@@ -89,7 +89,10 @@ Common fixes:
 
 ## Contributing
 
-Found a bug or want to contribute? Visit our GitHub repository.
+Found a bug or want to contribute? Visit the GitHub repository:
+<https://github.com/raphael1688dev/lifesmart_local_APP>
+
+Issues: <https://github.com/raphael1688dev/lifesmart_local_APP/issues>
 
 ## License
 
