@@ -40,6 +40,10 @@ Toggle channels `L1`/`L2`/`L3`:
 ### Sensors (`sensor` platform)
 - **Temperature** — `SL_NATURE` `T` channel (firmware exposes T even though spec lists only L*; raw value ÷ 10 = °C)
 - **Battery** — channel `V` on `SL_SW_ND*` / `SL_MC_ND*` (§6.3.2 / §6.3.5); channel `P8` on `SL_P` MINS Curtain (§6.4.3). Range 0–100 %, with `SensorDeviceClass.BATTERY`.
+- **Signal strength** — `lDbm` common attribute on every device (§6.1), in dBm, diagnostic category.
+
+### Binary sensors (`binary_sensor` platform)
+- **Connectivity** — `stat` common attribute on every device (§6.1). Updates via NOTIFY push (§4) and 15-minute fallback poll. Diagnostic category.
 
 ### Cover (`cover` platform)
 - `SL_P` — MINS Curtain Motor Controller (§6.4.3)
@@ -55,6 +59,15 @@ After setup, your devices will automatically appear in Home Assistant. The integ
 - LifeSmart mobile app controls
 
 ## Changelog
+
+### 20260523r2 — 2026-05-23
+- **Per-device connectivity binary_sensor** added. Reads the `stat` common attribute (Local Interfaces §6.1) and exposes one `binary_sensor` (CONNECTIVITY, diagnostic) per device. Updates via both NOTIFY push (LI §4) and a 15-minute fallback poll.
+- **`api.py` extension:** `_extract_state_changes` now also dispatches the device-level scalar `stat` field from `chg` items as virtual idx `"stat"`, so the existing `register_state_listener(me, idx, cb)` mechanism handles it.
+- **New platform file:** `binary_sensor.py`; `const.py` `PLATFORMS` now includes `"binary_sensor"`.
+
+### 20260523r1 — 2026-05-23
+- **Per-device RF signal strength sensor** added. Reads the `lDbm` common attribute from `eps` / `ep` responses (Local Interfaces §6.1) and exposes one diagnostic `sensor` per device, in dBm, with `SensorDeviceClass.SIGNAL_STRENGTH`. Works for both battery and mains-powered devices (unlike the `rssi` command, which returns error 102 for battery devices).
+- Sensors are placed in `EntityCategory.DIAGNOSTIC` so they don't clutter the main dashboard. Entity ID pattern: `sensor.<devtype>_<agt>_<me>_signal`.
 
 ### 20260523r0 — 2026-05-23
 - **Battery sensor support extended** to Stellar/Starry/Polar Switches (`SL_SW_ND*`) and Multi-control Accessories (`SL_MC_ND*`), reading the `V` channel per Local Interfaces §6.3.2 / §6.3.5.
@@ -88,6 +101,7 @@ This project is licensed under the MIT License.
 custom_components/lifesmart/
 ├── __init__.py
 ├── api.py
+├── binary_sensor.py
 ├── config_flow.py
 ├── const.py
 ├── cover.py
