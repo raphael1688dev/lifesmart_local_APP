@@ -191,7 +191,8 @@ class LifeSmartTemperatureSensor(LifeSmartBaseSensor):
             # HA 2026.5 naming: _attr_name = function only;
             # device name is provided by DeviceInfo (base class).
             self._attr_name = "Temperature"
-            self._attr_unique_id = f"temp_{device['me']}"
+            # Include agt (R10) — `me` collides across hubs on system devices.
+            self._attr_unique_id = f"temp_{device.get('agt', '')}_{device['me']}"
             self._attr_device_class = SensorDeviceClass.TEMPERATURE
             self._attr_state_class = SensorStateClass.MEASUREMENT
 
@@ -247,7 +248,8 @@ class LifeSmartBatterySensor(LifeSmartBaseSensor):
             # HA 2026.5 naming: _attr_name = function only;
             # device name is provided by DeviceInfo (base class).
             self._attr_name = "Battery"
-            self._attr_unique_id = f"battery_{device['me']}"
+            # Include agt (R10) — `me` collides across hubs on system devices.
+            self._attr_unique_id = f"battery_{device.get('agt', '')}_{device['me']}"
             self._attr_device_class = SensorDeviceClass.BATTERY
             self._attr_state_class = SensorStateClass.MEASUREMENT
             self._attr_native_unit_of_measurement = PERCENTAGE
@@ -302,7 +304,8 @@ class LifeSmartSignalSensor(LifeSmartBaseSensor):
         try:
             # HA 2026.5 naming: function only; device name from DeviceInfo.
             self._attr_name = "Signal strength"
-            self._attr_unique_id = f"signal_{device['me']}"
+            # Include agt (R10) — `me` collides across hubs on system devices.
+            self._attr_unique_id = f"signal_{device.get('agt', '')}_{device['me']}"
             self._attr_device_class = SensorDeviceClass.SIGNAL_STRENGTH
             self._attr_state_class = SensorStateClass.MEASUREMENT
             self._attr_native_unit_of_measurement = SIGNAL_STRENGTH_DECIBELS_MILLIWATT

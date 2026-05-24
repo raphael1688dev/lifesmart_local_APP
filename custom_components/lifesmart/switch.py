@@ -85,7 +85,8 @@ class LifeSmartSwitch(SwitchEntity):
         device_type = device.get('devtype')
         hub_id = device.get('agt', '')
         device_id = device['me']
-        self._attr_unique_id = f"switch_{device_id}_{idx}"
+        # Include agt (R10) — `me` collides across hubs on system devices.
+        self._attr_unique_id = f"switch_{hub_id}_{device_id}_{idx}"
         self.entity_id = f"switch.{generate_entity_id(device_type, hub_id, device_id, idx)}"
         
         initial_state = device.get("data", {}).get(idx, {}).get("v", 0)

@@ -58,7 +58,8 @@ class LifeSmartCover(CoverEntity):
         self._api = api
         self._device = device
         self._attr_name = device.get('name', 'MINS Curtain')
-        self._attr_unique_id = f"cover_{device['me']}"
+        # Include agt (R10) — `me` collides across hubs on system devices.
+        self._attr_unique_id = f"cover_{device.get('agt', '')}_{device['me']}"
         self._attr_device_class = CoverDeviceClass.CURTAIN
         
         # 支援開、關、停功能

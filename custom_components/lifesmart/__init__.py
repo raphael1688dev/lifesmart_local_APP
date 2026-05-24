@@ -9,6 +9,7 @@ import voluptuous as vol
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant, ServiceCall
 from homeassistant.exceptions import ConfigEntryNotReady
+from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers.event import async_track_time_interval
 from .const import DOMAIN, PLATFORMS, API_TIMEOUT
 from .api import LifeSmartAPI
@@ -94,6 +95,11 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         "host": entry.data["host"],
     }
 
+    # R10 (2026-05-23): migrate old single-hub unique_ids to <feature>_<agt>_<me>
+    # format so multi-hub setups don't collide on shared system devices (e.g.
+    # V_SI / me=0020 exists with the same `me` on every hub).
+    _migrate_unique_ids(hass, entry, devices)
+
     _async_register_services(hass)
 
     local_ip = await hass.async_add_executor_job(_get_local_ip_for_target, entry.data["host"])
@@ -162,3 +168,75 @@ def generate_entity_id(device_type, hub_id, device_id, idx=None):
     else:
         raw_id = f"{device_type}_{hub_id}_{device_id}".lower()
     return re.sub(r"_+", "_", raw_id).strip("_")
+
+
+# Features whose unique_id followed the legacy <feature>_<me>[_<idx>] pattern
+# before R10. After R10 they all carry <feature>_<agt>_<me>[_<idx>] so two hubs
+# can coexist when they share device IDs (e.g. the V_SI / me=0020 system device
+# auto-created by every Smart Station).
+_LEGACY_FEATURES = ("connectivity", "signal", "temp", "battery", "cover", "remote", "switch")
+
+
+def _migrate_unique_ids(
+    hass: HomeAssistant, entry: ConfigEntry, devices: list,
+) -> None:
+    """Rewrite legacy <feature>_<me> unique_ids to <feature>_<agt>_<me>.
+
+    Idempotent: the only entries we rewrite are those whose second token is
+    found as a `me` value in the current device list — already-migrated
+    entries have an `agt` (long base64-ish string) in that slot and will not
+    match any `me`, so we leave them alone.
+
+    Returns silently if devices is empty (e.g. discovery returned nothing) —
+    no entities should exist for an entry with no devices anyway.
+    """
+    if not devices:
+        return
+
+    me_to_agt: dict[str, str] = {}
+    for d in devices:
+        if not isinstance(d, dict):
+            continue
+        me = d.get("me")
+        agt = d.get("agt")
+        if isinstance(me, str) and isinstance(agt, str):
+            me_to_agt[me] = agt
+
+    if not me_to_agt:
+        return
+
+    ent_reg = er.async_get(hass)
+    rewrites = 0
+    for entity_entry in list(ent_reg.entities.values()):
+        if entity_entry.config_entry_id != entry.entry_id:
+            continue
+        old_uid = entity_entry.unique_id
+        if not isinstance(old_uid, str) or "_" not in old_uid:
+            continue
+        feature, _, suffix = old_uid.partition("_")
+        if feature not in _LEGACY_FEATURES or not suffix:
+            continue
+        # Pre-R10 patterns:
+        #   <feature>_<me>          (connectivity / signal / temp / battery / cover / remote)
+        #   switch_<me>_<idx>       (switch only)
+        # so the FIRST suffix token must be a known `me`.
+        first_token, _, rest = suffix.partition("_")
+        if first_token not in me_to_agt:
+            # Either already migrated (second token is agt) or stale entry
+            # for a device no longer paired — leave untouched.
+            continue
+        agt = me_to_agt[first_token]
+        new_uid = f"{feature}_{agt}_{suffix}"  # suffix already starts with me
+        try:
+            ent_reg.async_update_entity(
+                entity_entry.entity_id, new_unique_id=new_uid,
+            )
+            rewrites += 1
+        except (ValueError, KeyError) as err:
+            _LOGGER.debug(
+                "Skipped migration for %s (%s → %s): %s",
+                entity_entry.entity_id, old_uid, new_uid, err,
+            )
+
+    if rewrites:
+        _LOGGER.info("Migrated %d unique_id(s) to include agt prefix", rewrites)

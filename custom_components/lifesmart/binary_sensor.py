@@ -105,7 +105,9 @@ class LifeSmartConnectivitySensor(BinarySensorEntity):
 
             # HA 2026.5 naming: function only; device name from DeviceInfo.
             self._attr_name = "Connectivity"
-            self._attr_unique_id = f"connectivity_{me}"
+            # Include agt — `me` is only unique within a hub (system devices
+            # like V_SI / 0020 exist on every hub). See R10 migration.
+            self._attr_unique_id = f"connectivity_{hub_id}_{me}"
             # Virtual idx "connectivity" only feeds entity_id slug.
             self.entity_id = (
                 f"binary_sensor.{generate_entity_id(devtype, hub_id, me, 'connectivity')}"

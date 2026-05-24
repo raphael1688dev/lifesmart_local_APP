@@ -80,7 +80,8 @@ async def async_setup_entry(
         for device_id, data in device_remotes.items():
             desired_object_id = f"{_slugify(data['device'].get('name') or 'remote')}_{device_id}".lower()
             desired_entity_id = f"remote.{desired_object_id}"
-            unique_id = f"remote_{device_id}"
+            agt = data['device'].get('agt', '')
+            unique_id = f"remote_{agt}_{device_id}"
             existing_entity_id = registry.async_get_entity_id("remote", DOMAIN, unique_id)
             if existing_entity_id and existing_entity_id != desired_entity_id and registry.async_get(desired_entity_id) is None:
                 registry.async_update_entity(existing_entity_id, new_entity_id=desired_entity_id)
@@ -108,7 +109,9 @@ class LifeSmartRemote(remote.RemoteEntity):
         self._remote_data_list = remote_data_list
         self._attr_name = name
         device_id = device["me"]
-        self._attr_unique_id = f"remote_{device_id}"
+        agt = device.get("agt", "")
+        # Include agt (R10) — `me` collides across hubs on system devices.
+        self._attr_unique_id = f"remote_{agt}_{device_id}"
         base = _slugify(device.get("name") or name or "remote")
         self.entity_id = f"remote.{base}_{device_id}"
         self._available = True
