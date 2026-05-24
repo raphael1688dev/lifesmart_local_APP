@@ -67,7 +67,32 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     else:
         _LOGGER.info("Successfully loaded %s devices from LifeSmart Hub.", len(devices))
 
-    domain_data["entries"][entry.entry_id] = {"api": api, "devices": devices}
+    # Phase 1 / R9: fetch hub identity (cfg:getver) once at setup so all
+    # hub-level entities can read from a single cached dict without each one
+    # racing for its own request. Failures are non-fatal — hub entities will
+    # show "Unknown" but the rest of the integration still works.
+    hub_info: dict = {}
+    try:
+        ver_resp = await api.get_hub_version()
+        if isinstance(ver_resp, dict) and ver_resp.get("code") == 0 and isinstance(ver_resp.get("msg"), dict):
+            msg = ver_resp["msg"]
+            hub_info = {
+                "ver": msg.get("ver"),
+                "osver": msg.get("osver"),
+                "mgatype": msg.get("mgatype"),
+            }
+            _LOGGER.debug("Hub version info: %s", hub_info)
+        else:
+            _LOGGER.warning("cfg:getver returned non-zero or unexpected shape: %s", ver_resp)
+    except Exception as err:
+        _LOGGER.warning("Failed to query hub version (cfg:getver): %s", err)
+
+    domain_data["entries"][entry.entry_id] = {
+        "api": api,
+        "devices": devices,
+        "hub_info": hub_info,
+        "host": entry.data["host"],
+    }
 
     _async_register_services(hass)
 

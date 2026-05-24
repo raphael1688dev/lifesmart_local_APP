@@ -171,6 +171,31 @@ class LifeSmartAPI:
         args = {"cfg": "notify", "host": host, "port": port}
         return await self.send_command("config", args, CMD_SET)
 
+    async def get_hub_version(self) -> Dict[str, Any]:
+        """LI §3.3.10 cfg:getver — returns ver / osver / mgatype."""
+        return await self.send_command("config", {"cfg": "getver"}, CMD_SET)
+
+    async def reboot_hub(self) -> Dict[str, Any]:
+        """LI §3.3.10 cfg:reboot — hub executes immediately, ack-then-restart."""
+        return await self.send_command("config", {"cfg": "reboot"}, CMD_SET)
+
+    async def get_scene_list(self) -> Dict[str, Any]:
+        """LI §3.3.5 obj=scene GET — returns list of {id, name, desc, cls}."""
+        return await self.send_command("scene", {}, 1)  # CMD_GET = 1
+
+    async def trigger_scene(self, scene_id: str) -> Dict[str, Any]:
+        """LI §3.3.6 obj=doscene SET — fires a scene by AI... id.
+
+        Spec example (L1067-1097) passes args.args.type=128. For cls=scene /
+        groupirc the spec text marks parameters as N/A, but firmware seems to
+        require the nested args envelope — we replicate the example shape.
+        """
+        return await self.send_command(
+            "doscene",
+            {"id": scene_id, "args": {"type": 128}},
+            CMD_SET,
+        )
+
     async def get_remote_keys(self, remote_id: str) -> Dict[str, Any]:
         """Retrieve IR remote keys for a specific device."""
         args = {

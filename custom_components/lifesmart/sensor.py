@@ -18,7 +18,7 @@ from homeassistant.const import (
     SIGNAL_STRENGTH_DECIBELS_MILLIWATT,
     UnitOfTemperature,
 )
-from .const import DOMAIN, CMD_GET, MANUFACTURER
+from .const import CMD_GET, DOMAIN, HUB_MODEL_NAMES, MANUFACTURER
 from . import generate_entity_id
 _LOGGER = logging.getLogger(__name__)
 
@@ -102,6 +102,16 @@ async def async_setup_entry(
             except ValueError as e:
                 _LOGGER.error("Invalid device data format: %s", e)
                 continue
+
+    # Phase 1 / R9: hub-level diagnostic sensors driven by cfg:getver
+    # (cached at integration setup, see __init__.py).
+    hub_info = entry_data.get("hub_info") or {}
+    host = entry_data.get("host", "")
+    for field in ("ver", "osver", "mgatype"):
+        sensors.append(LifeSmartHubInfoSensor(
+            hub_info=hub_info, host=host, field=field,
+            config_entry_title=config_entry.title or "LifeSmart Hub",
+        ))
 
     _LOGGER.debug("Adding %s sensors", len(sensors))
     async_add_entities(sensors)
@@ -322,3 +332,57 @@ class LifeSmartSignalSensor(LifeSmartBaseSensor):
                     self.async_write_ha_state()
         except Exception as e:
             _LOGGER.error("Unexpected error updating signal sensor: %s", e)
+
+
+class LifeSmartHubInfoSensor(SensorEntity):
+    """Hub-level identity sensor driven by cfg:getver (LI §3.3.10).
+
+    Three instances per integration entry — ver / osver / mgatype. Mounted on
+    the synthetic hub device (identifiers `(DOMAIN, f"hub_{host}")`) so they
+    group with the future reboot button. Pure cache reader — no API calls.
+    Refresh is owned by __init__.py (currently single-shot at setup; bump to
+    24h timer if hubs upgrade in place).
+    """
+
+    _attr_should_poll = False
+    _attr_entity_category = EntityCategory.DIAGNOSTIC
+
+    # Field-specific labels and unique_id slugs.
+    _FIELD_META = {
+        "ver":     ("Firmware version", "firmware"),
+        "osver":   ("OS version",       "os"),
+        "mgatype": ("Model",            "model"),
+    }
+
+    def __init__(
+        self,
+        hub_info: Dict[str, Any],
+        host: str,
+        field: str,
+        config_entry_title: str,
+    ) -> None:
+        self._field = field
+        label, slug = self._FIELD_META[field]
+        host_slug = host.replace(".", "_")  # 192.168.1.50 -> 192_168_1_50
+
+        self._attr_name = label
+        self._attr_unique_id = f"hub_{slug}_{host_slug}"
+        # Hub-level entity_id is hand-written per CLAUDE.md convention.
+        self.entity_id = f"sensor.lifesmart_hub_{slug}"
+
+        # Pre-format the mgatype value if a friendly name exists.
+        raw = hub_info.get(field)
+        if field == "mgatype" and isinstance(raw, str):
+            self._attr_native_value = HUB_MODEL_NAMES.get(raw, raw)
+        else:
+            self._attr_native_value = raw
+
+        hub_identifier = f"hub_{host}"
+        mgatype = hub_info.get("mgatype")
+        self._attr_device_info = DeviceInfo(
+            identifiers={(DOMAIN, hub_identifier)},
+            name=config_entry_title,
+            manufacturer=MANUFACTURER,
+            model=HUB_MODEL_NAMES.get(mgatype, mgatype) if isinstance(mgatype, str) else "LifeSmart Hub",
+            sw_version=hub_info.get("ver"),
+        )
