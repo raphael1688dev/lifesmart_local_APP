@@ -66,6 +66,12 @@ After setup, your devices will automatically appear in Home Assistant. The integ
 
 ## Changelog
 
+### 20260523r5 — 2026-05-24 — unique_id cross-hub collision fix (R10)
+- **Multi-hub bug fix.** Per-sub-device `unique_id`s previously used `<feature>_<me>` (e.g. `connectivity_0020`), assuming `me` is globally unique. In reality `me` is only unique within a single hub — hub-created system devices like `V_SI / me=0020` exist on every hub, so multi-hub setups would log `Platform lifesmart does not generate unique IDs` and silently drop the second hub's entity.
+- **New format:** `<feature>_<agt>_<me>` (and `switch_<agt>_<me>_<idx>` for switches). `agt` is the hub-global ID from LI §6.1 device attributes.
+- **Auto-migration:** `__init__.py` rewrites existing legacy `unique_id`s in-place during setup. `entity_id`s are unchanged (they already included `agt` via `generate_entity_id`), so user automations and dashboards stay intact.
+- **Affected platforms:** `switch`, `sensor` (temperature / battery / signal), `binary_sensor` (connectivity), `cover`, `remote`. Hub-level entities (`button`, `scene`, hub info sensors) were already cross-hub-safe.
+
 ### 20260523r4 — 2026-05-23 — Hub-level entities (R8 Phase 1)
 - **Hub identity sensors** — 3 new diagnostic sensors (`sensor.lifesmart_hub_firmware`, `sensor.lifesmart_hub_os`, `sensor.lifesmart_hub_model`) populated from `cfg:getver` (LI §3.3.10). `mgatype` is mapped through a friendly-name table (`LSJZX1K` → "Smart Station / Smart Station Pro", etc.).
 - **Hub reboot button** — `button.lifesmart_hub_reboot` (`ButtonDeviceClass.RESTART`, config category) calls `cfg:reboot`. HA UI shows the standard confirmation prompt before pressing.
