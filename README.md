@@ -45,6 +45,12 @@ Toggle channels `L1`/`L2`/`L3`:
 ### Binary sensors (`binary_sensor` platform)
 - **Connectivity** — `stat` common attribute on every device (§6.1). Updates via NOTIFY push (§4) and 15-minute fallback poll. Diagnostic category.
 
+### Buttons (`button` platform)
+- **Hub Reboot** — `button.lifesmart_hub_reboot`, calls `cfg:reboot` (§3.3.10). `ButtonDeviceClass.RESTART` so HA UI requests confirmation before pressing.
+
+### Scenes (`scene` platform)
+- **Hub scenes** — automatically discovered via `obj=scene` GET (§3.3.5). Each scene with `cls in ("scene", "groupirc")` is exposed as an HA Scene; activation calls `obj=doscene` SET (§3.3.6).
+
 ### Cover (`cover` platform)
 - `SL_P` — MINS Curtain Motor Controller (§6.4.3)
 
@@ -59,6 +65,17 @@ After setup, your devices will automatically appear in Home Assistant. The integ
 - LifeSmart mobile app controls
 
 ## Changelog
+
+### 20260523r4 — 2026-05-23 — Hub-level entities (R8 Phase 1)
+- **Hub identity sensors** — 3 new diagnostic sensors (`sensor.lifesmart_hub_firmware`, `sensor.lifesmart_hub_os`, `sensor.lifesmart_hub_model`) populated from `cfg:getver` (LI §3.3.10). `mgatype` is mapped through a friendly-name table (`LSJZX1K` → "Smart Station / Smart Station Pro", etc.).
+- **Hub reboot button** — `button.lifesmart_hub_reboot` (`ButtonDeviceClass.RESTART`, config category) calls `cfg:reboot`. HA UI shows the standard confirmation prompt before pressing.
+- **Scenes** — discovered via `obj=scene` GET and exposed as HA Scene entities (`scene.lifesmart_<slug>_<id_tail>`). Triggering calls `obj=doscene` SET. Only `cls in ("scene", "groupirc")` are surfaced this iteration; `groupsw` / `grouphw` / `grouprgbw` need light/switch semantics and are deferred.
+- **`hub_info` cache** — `__init__.py` calls `cfg:getver` once at setup and stores the result in `entry_data["hub_info"]` so every hub-level entity reads from one cache instead of racing for its own request. Failure is non-fatal.
+- **New platform files:** `button.py`, `scene.py`. `const.py` `PLATFORMS` extended accordingly.
+- **Note:** the previous worry that `cfg:notify` expires after 300 s was a stale concern — `__init__.py` already re-sends the subscription every 90 s.
+
+### 20260523r3 — 2026-05-23
+- `manifest.json` metadata: `codeowners` → `["@raphael1688dev"]`; `documentation` and new `issue_tracker` point to <https://github.com/raphael1688dev/lifesmart_local_APP>.
 
 ### 20260523r2 — 2026-05-23
 - **Per-device connectivity binary_sensor** added. Reads the `stat` common attribute (Local Interfaces §6.1) and exposes one `binary_sensor` (CONNECTIVITY, diagnostic) per device. Updates via both NOTIFY push (LI §4) and a 15-minute fallback poll.
@@ -105,11 +122,13 @@ custom_components/lifesmart/
 ├── __init__.py
 ├── api.py
 ├── binary_sensor.py
+├── button.py
 ├── config_flow.py
 ├── const.py
 ├── cover.py
 ├── manifest.json
 ├── remote.py
+├── scene.py
 ├── sensor.py
 ├── services.yaml
 ├── switch.py
