@@ -1,0 +1,56 @@
+{
+    "config": {
+        "step": {
+            "user": {
+                "title": "LifeSmart 中樞",
+                "description": "設定您的 LifeSmart 中樞整合",
+                "data": {
+                    "host": "IP 位址",
+                    "model": "中樞型號",
+                    "token": "Token"
+                }
+            },
+            "reconfigure": {
+                "title": "重新設定 LifeSmart 中樞",
+                "description": "更新您的 LifeSmart 中樞連線設定",
+                "data": {
+                    "host": "IP 位址",
+                    "model": "中樞型號",
+                    "token": "Token"
+                }
+            }
+        },
+        "error": {
+            "invalid_host": "IP 位址或主機名稱格式錯誤",
+            "invalid_model": "中樞型號無效",
+            "invalid_token": "Token 格式錯誤",
+            "cannot_connect": "無法連線至中樞",
+            "clock_skew": "中樞拒絕請求（代碼 101）：時鐘差異過大。自動校正失敗 — 請以 NTP 同步 HA 主機時間。",
+            "no_devices": "中樞上找不到任何裝置",
+            "invalid_config": "設定無效"
+        },
+        "abort": {
+            "already_configured": "裝置已設定過"
+        }
+    },
+    "options": {
+        "step": {
+            "init": {
+                "title": "LifeSmart 中樞選項",
+                "data": {
+                    "model": "中樞型號"
+                }
+            }
+        }
+    },
+    "issues": {
+        "hub_unreachable": {
+            "title": "LifeSmart 中樞無法連線",
+            "description": "整合啟動 {minutes} 分鐘內都無法與中樞 {host} 取得回應。請確認中樞已上線、IP 位址正確、且與 HA 在同一網段。"
+        },
+        "hub_version_unknown": {
+            "title": "無法取得中樞韌體版本",
+            "description": "`cfg:getver` 命令未回傳預期內容。中樞韌體版本／系統版本／型號 sensor 會顯示為空白，但其他功能不受影響。"
+        }
+    }
+}

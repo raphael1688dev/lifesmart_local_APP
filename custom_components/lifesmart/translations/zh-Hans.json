@@ -1,0 +1,56 @@
+{
+    "config": {
+        "step": {
+            "user": {
+                "title": "LifeSmart 中枢",
+                "description": "设置您的 LifeSmart 中枢集成",
+                "data": {
+                    "host": "IP 地址",
+                    "model": "中枢型号",
+                    "token": "Token"
+                }
+            },
+            "reconfigure": {
+                "title": "重新配置 LifeSmart 中枢",
+                "description": "更新您的 LifeSmart 中枢连接设置",
+                "data": {
+                    "host": "IP 地址",
+                    "model": "中枢型号",
+                    "token": "Token"
+                }
+            }
+        },
+        "error": {
+            "invalid_host": "IP 地址或主机名格式错误",
+            "invalid_model": "中枢型号无效",
+            "invalid_token": "Token 格式错误",
+            "cannot_connect": "无法连接到中枢",
+            "clock_skew": "中枢拒绝请求（代码 101）：时钟差异过大。自动校正失败 — 请通过 NTP 同步 HA 主机时间。",
+            "no_devices": "中枢上未找到任何设备",
+            "invalid_config": "配置无效"
+        },
+        "abort": {
+            "already_configured": "设备已配置"
+        }
+    },
+    "options": {
+        "step": {
+            "init": {
+                "title": "LifeSmart 中枢选项",
+                "data": {
+                    "model": "中枢型号"
+                }
+            }
+        }
+    },
+    "issues": {
+        "hub_unreachable": {
+            "title": "LifeSmart 中枢无法连接",
+            "description": "集成启动 {minutes} 分钟内未能从中枢 {host} 取得任何回应。请确认中枢已上电、IP 地址正确、且与 HA 在同一网段。"
+        },
+        "hub_version_unknown": {
+            "title": "无法读取中枢固件版本",
+            "description": "`cfg:getver` 未返回预期内容。中枢固件版本／系统版本／型号 sensor 将显示为空，但其他功能不受影响。"
+        }
+    }
+}

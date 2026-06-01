@@ -1,0 +1,56 @@
+{
+    "config": {
+        "step": {
+            "user": {
+                "title": "LifeSmart Hub",
+                "description": "Set up your LifeSmart Hub integration",
+                "data": {
+                    "host": "IP Address",
+                    "model": "Hub Model",
+                    "token": "Token"
+                }
+            },
+            "reconfigure": {
+                "title": "Reconfigure LifeSmart Hub",
+                "description": "Update your LifeSmart Hub connection settings",
+                "data": {
+                    "host": "IP Address",
+                    "model": "Hub Model",
+                    "token": "Token"
+                }
+            }
+        },
+        "error": {
+            "invalid_host": "Invalid IP address or hostname",
+            "invalid_model": "Invalid hub model",
+            "invalid_token": "Invalid token format",
+            "cannot_connect": "Failed to connect to the hub",
+            "clock_skew": "Hub rejected the request (code 101): clock difference too large. Auto-correction failed — sync your HA system clock with NTP.",
+            "no_devices": "No devices found on the hub",
+            "invalid_config": "Invalid configuration"
+        },
+        "abort": {
+            "already_configured": "Device is already configured"
+        }
+    },
+    "options": {
+        "step": {
+            "init": {
+                "title": "LifeSmart Hub Options",
+                "data": {
+                    "model": "Hub Model"
+                }
+            }
+        }
+    },
+    "issues": {
+        "hub_unreachable": {
+            "title": "LifeSmart hub is unreachable",
+            "description": "No response from hub at {host} after {minutes} minutes. Check that the hub is powered on, the IP is correct, and HA shares the same LAN segment."
+        },
+        "hub_version_unknown": {
+            "title": "Cannot read hub firmware version",
+            "description": "`cfg:getver` did not return the expected payload. The hub firmware / OS / model sensors will be blank, but other functions still work."
+        }
+    }
+}
