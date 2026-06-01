@@ -22,3 +22,9 @@ env/
 .vscode/
 *.swp
 *~
+
+# Internal project notes — kept locally, not published to the public repo.
+# These contain Claude Code conventions and historical development log
+# that aren't useful to end users / contributors of the integration.
+CLAUDE.md
+PROGRESS.md
