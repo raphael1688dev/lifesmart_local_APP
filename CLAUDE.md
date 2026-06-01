@@ -5,7 +5,7 @@
 詳細規範條文見 `Docs/HomeAssistant_2026.5_Rules.md`，以下為關鍵摘要：
 - **全面非同步化 (Async-First):** 嚴禁使用會阻塞執行緒的函式（如 `requests`）。所有網路請求必須使用 `aiohttp`（透過 `async_get_clientsession(hass)` 取得），或使用 `hass.async_add_executor_job` 將**同步阻塞**任務交付給背景執行緒。`async_add_executor_job` 不可包裹 coroutine。
 - **資料更新協調器 (DataUpdateCoordinator):** 外部 API 輪詢必須實作 `DataUpdateCoordinator`，統一管理實體 (Entities) 的資料刷新，避免重複發送請求造成效能瓶頸。
-- **配置流程 (Config Flow):** 拒絕使用 `configuration.yaml` 進行設定。必須實作基於 UI 的 `ConfigFlow`，引導使用者輸入認證資訊（如 API Token、主機連線等），並確保支援認證過期後的重新設定流程 (`reauth`)。`manifest.json` 的 `"options": true` 必須搭配 `async_step_options`。`@HANDLERS.register` 已在 HA 2026 移除。
+- **配置流程 (Config Flow):** 拒絕使用 `configuration.yaml` 進行設定。必須實作基於 UI 的 `ConfigFlow`，引導使用者輸入認證資訊（如 API Token、主機連線等），並確保支援認證過期後的重新設定流程 (`reauth`)。Options flow 透過 ConfigFlow class 的 `async_get_options_flow` classmethod 啟用 — **不要**在 `manifest.json` 加 `"options": true`（不是合法欄位，hassfest 會擋）。`@HANDLERS.register` 已在 HA 2026 移除。
 - **型別提示 (Type Hinting):** 所有新撰寫的函式與類別方法必須包含完整的 Python 型別標註，確保能通過 `mypy` 的嚴格檢查。`Optional[callable]` 是錯誤的，應用 `Optional[Callable[[], None]]`。
 - **命名規範 (Entity Naming):** 遵從 2026.5 的最新命名指引，實體名稱 (Entity Name) 內不得包含裝置名稱 (Device Name)，前端 UI 會自動完成組合。`DeviceInfo.name` 設裝置名稱；`_attr_name` 設功能描述。
 - **狀態更新:** push 實體（`_attr_should_poll = False`）更新狀態時呼叫 `async_write_ha_state()`，不可呼叫 `async_update_ha_state()`（後者會觸發 poll）。
