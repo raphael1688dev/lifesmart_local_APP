@@ -131,6 +131,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     # whose migration may have failed on first boot (e.g. discovery was
     # empty so we had no devices to look up agt against).
     _migrate_unique_ids(hass, entry, devices)
+    _migrate_entity_ids(hass, entry)
 
     _async_register_services(hass)
 
@@ -252,6 +253,10 @@ def generate_entity_id(device_type, hub_id, device_id, idx=None):
         raw_id = f"{device_type}_{hub_id}_{device_id}_{idx}".lower()
     else:
         raw_id = f"{device_type}_{hub_id}_{device_id}".lower()
+    # HA entity_id object part must match [a-z0-9_]+; some `agt` tokens carry
+    # '-' (base64-ish) which HA 2027.2 will reject outright. Sanitize any
+    # non-conforming char to '_' before collapsing.
+    raw_id = re.sub(r"[^a-z0-9_]", "_", raw_id)
     return re.sub(r"_+", "_", raw_id).strip("_")
 
 
@@ -325,3 +330,48 @@ def _migrate_unique_ids(
 
     if rewrites:
         _LOGGER.info("Migrated %d unique_id(s) to include agt prefix", rewrites)
+
+
+def _migrate_entity_ids(hass: HomeAssistant, entry: ConfigEntry) -> None:
+    """Rename entity_ids whose object part contains chars HA 2027.2 will reject.
+
+    HA requires entity_id's object part to match ``[a-z0-9_]+``. Some hubs
+    ship an ``agt`` (hub ID) containing ``-`` (base64-ish tokens), so early
+    boots produced entity_ids like ``switch.foo_a-b_c``. HA currently accepts
+    them with a warning; 2027.2 will reject them entirely.
+
+    Idempotent: skips entity_ids that are already clean, and skips ids not
+    owned by this config entry. HA's registry rename hook rewires
+    automations/scripts to the new entity_id automatically; Lovelace card
+    references are user-authored config and are NOT rewritten.
+    """
+    ent_reg = er.async_get(hass)
+    renames = 0
+    for entity_entry in list(ent_reg.entities.values()):
+        if entity_entry.config_entry_id != entry.entry_id:
+            continue
+        old_id = entity_entry.entity_id
+        if not isinstance(old_id, str) or "." not in old_id:
+            continue
+        domain, _, obj = old_id.partition(".")
+        if not obj or not re.search(r"[^a-z0-9_]", obj):
+            continue
+        fixed_obj = re.sub(r"[^a-z0-9_]", "_", obj)
+        fixed_obj = re.sub(r"_+", "_", fixed_obj).strip("_")
+        if not fixed_obj or fixed_obj == obj:
+            continue
+        new_id = f"{domain}.{fixed_obj}"
+        try:
+            ent_reg.async_update_entity(old_id, new_entity_id=new_id)
+            renames += 1
+        except (ValueError, KeyError) as err:
+            _LOGGER.debug(
+                "Skipped entity_id migration for %s → %s: %s",
+                old_id, new_id, err,
+            )
+
+    if renames:
+        _LOGGER.info(
+            "Migrated %d entity_id(s) to strip characters HA 2027.2 will reject",
+            renames,
+        )

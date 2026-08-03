@@ -50,3 +50,16 @@ def test_idx_none_explicit_vs_missing() -> None:
         generate_entity_id("X", "Y", "Z", None)
         == generate_entity_id("X", "Y", "Z")
     )
+
+
+def test_sanitizes_hyphen_in_agt() -> None:
+    """agt tokens with '-' must produce HA-valid entity_ids (2027.2 will reject '-')."""
+    result = generate_entity_id("SL_SW_ND2", "AzQAAPWwAAEAAA8-Gqz", "w_A21D", "L2")
+    assert "-" not in result
+    assert result == "sl_sw_nd2_azqaapwwaaeaaa8_gqz_w_a21d_l2"
+
+
+def test_sanitizes_other_invalid_chars() -> None:
+    """Any char outside [a-z0-9_] gets replaced and collapsed."""
+    # spaces, +, /, . all become _ then collapse
+    assert generate_entity_id("A B", "C+D", "E/F", "G.H") == "a_b_c_d_e_f_g_h"
