@@ -40,6 +40,8 @@ async def async_setup_entry(
 
     entry_data = hass.data[DOMAIN]["entries"][config_entry.entry_id]
     api = entry_data["api"]
+    # D22: hub device registry ID — sub-devices hang off it via via_device_id.
+    hub_device_id: Optional[str] = entry_data.get("hub_device_id")
     devices = entry_data.get("devices") or []
     if not devices:
         try:
@@ -63,7 +65,9 @@ async def async_setup_entry(
                 if "stat" in device:
                     _LOGGER.debug("Found connectivity sensor in %s", device.get('name'))
                     binary_sensors.append(
-                        LifeSmartConnectivitySensor(api=api, device=device)
+                        LifeSmartConnectivitySensor(
+                            api=api, device=device, hub_device_id=hub_device_id,
+                        )
                     )
             except KeyError as e:
                 _LOGGER.error("Missing required device field: %s", e)
@@ -92,7 +96,9 @@ class LifeSmartConnectivitySensor(BinarySensorEntity):
     _unsub_report: Optional[Callable[[], None]]
     _remove_tracker: Optional[Callable[[], None]]
 
-    def __init__(self, api: Any, device: Dict[str, Any]) -> None:
+    def __init__(
+        self, api: Any, device: Dict[str, Any], hub_device_id: Optional[str] = None,
+    ) -> None:
         self._api = api
         self._device = device
         self._unsub_report = None
@@ -120,6 +126,10 @@ class LifeSmartConnectivitySensor(BinarySensorEntity):
                 model=devtype or 'Unknown',
                 sw_version=device.get('epver', 'Unknown'),
             )
+            # D22: link under the hub device. `via_device_id` (not the
+            # deprecated `via_device` tuple) — see __init__.py rationale.
+            if hub_device_id:
+                self._attr_device_info["via_device_id"] = hub_device_id
 
             stat = device.get("stat")
             self._attr_is_on = (stat == 1) if isinstance(stat, (int, float)) else None

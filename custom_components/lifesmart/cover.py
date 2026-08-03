@@ -26,6 +26,8 @@ async def async_setup_entry(
     _LOGGER.debug("Setting up LifeSmart cover platform")
     entry_data = hass.data[DOMAIN]["entries"][config_entry.entry_id]
     api = entry_data["api"]
+    # D22: hub device registry ID — sub-devices hang off it via via_device_id.
+    hub_device_id = entry_data.get("hub_device_id")
     devices = entry_data.get("devices") or []
     if not devices:
         devices_data = await api.discover_devices()
@@ -43,7 +45,8 @@ async def async_setup_entry(
                     LifeSmartCover(
                         api=api,
                         device=device,
-                        idx=device.get('idx', PORT_STATE)
+                        idx=device.get('idx', PORT_STATE),
+                        hub_device_id=hub_device_id,
                     )
                 )
     
@@ -55,7 +58,7 @@ class LifeSmartCover(CoverEntity):
     """Representation of a LifeSmart cover."""
     _attr_should_poll = False
     
-    def __init__(self, api, device, idx: Optional[str] = None):
+    def __init__(self, api, device, idx: Optional[str] = None, hub_device_id: Optional[str] = None):
         self._api = api
         self._device = device
         self._attr_name = device.get('name', 'MINS Curtain')
@@ -84,6 +87,10 @@ class LifeSmartCover(CoverEntity):
             model=device.get('devtype', 'SL_P'),
             sw_version=device.get('epver', 'Unknown')
         )
+        # D22: link under the hub device. `via_device_id` (not the deprecated
+        # `via_device` tuple) — see __init__.py rationale.
+        if hub_device_id:
+            self._attr_device_info["via_device_id"] = hub_device_id
 
     async def async_added_to_hass(self):
         """實體加入 HA 時，註冊 UDP 推播監聽並獲取初始狀態"""

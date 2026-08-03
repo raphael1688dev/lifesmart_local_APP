@@ -3,7 +3,7 @@ import asyncio
 import logging
 import re
 import time
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Optional
 
 from homeassistant.components import remote
 from homeassistant.config_entries import ConfigEntry
@@ -38,6 +38,8 @@ async def async_setup_entry(
     _LOGGER.info("Setting up LifeSmart remotes")
     entry_data = hass.data[DOMAIN]["entries"][config_entry.entry_id]
     api = entry_data["api"]
+    # D22: hub device registry ID — sub-devices hang off it via via_device_id.
+    hub_device_id: Optional[str] = entry_data.get("hub_device_id")
     devices = entry_data.get("devices") or []
     if not devices:
         devices_data = await api.discover_devices()
@@ -96,7 +98,8 @@ async def async_setup_entry(
                     api=api,
                     device=data["device"],
                     remote_data_list=data["remotes"],
-                    name=data["device"].get("name", "Remote")
+                    name=data["device"].get("name", "Remote"),
+                    hub_device_id=hub_device_id,
                 )
             )
     
@@ -106,10 +109,18 @@ class LifeSmartRemote(remote.RemoteEntity):
     """LifeSmart Remote Entity."""
     _attr_should_poll = False
 
-    def __init__(self, api, device: Dict[str, Any], remote_data_list: List[Dict[str, Any]], name: str):
+    def __init__(
+        self,
+        api,
+        device: Dict[str, Any],
+        remote_data_list: List[Dict[str, Any]],
+        name: str,
+        hub_device_id: Optional[str] = None,
+    ):
         """Initialize the remote."""
         self._api = api
         self._device = device
+        self._hub_device_id = hub_device_id
 
         self._remote_data_list = remote_data_list
         self._attr_name = name
@@ -197,13 +208,18 @@ class LifeSmartRemote(remote.RemoteEntity):
 
     @property
     def device_info(self) -> DeviceInfo:
-        return DeviceInfo(
+        info = DeviceInfo(
             identifiers={(DOMAIN, self._device["me"])},
             name=self._device.get("name", "LifeSmart Remote"),
             manufacturer=MANUFACTURER,
             model=self._device.get("devtype"),
             sw_version=self._device.get("epver"),
         )
+        # D22: link under the hub device. `via_device_id` (not the deprecated
+        # `via_device` tuple) — see __init__.py rationale.
+        if self._hub_device_id:
+            info["via_device_id"] = self._hub_device_id
+        return info
 
     @property
     def extra_state_attributes(self) -> Dict[str, Any]:

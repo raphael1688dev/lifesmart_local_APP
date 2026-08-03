@@ -37,6 +37,8 @@ async def async_setup_entry(
     """Set up LifeSmart switches."""
     entry_data = hass.data[DOMAIN]["entries"][config_entry.entry_id]
     api = entry_data["api"]
+    # D22: hub device registry ID — sub-devices hang off it via via_device_id.
+    hub_device_id = entry_data.get("hub_device_id")
     devices = entry_data.get("devices") or []
     if not devices:
         devices_data = await api.discover_devices()
@@ -58,7 +60,8 @@ async def async_setup_entry(
                                 api=api,
                                 device=device,
                                 idx=channel,
-                                name=channel_name
+                                name=channel_name,
+                                hub_device_id=hub_device_id,
                             )
                         )
 
@@ -66,11 +69,12 @@ async def async_setup_entry(
 
 class LifeSmartSwitch(SwitchEntity):
     _attr_should_poll = False
-    def __init__(self, api, device, idx, name):
+    def __init__(self, api, device, idx, name, hub_device_id=None):
         """Initialize the switch."""
         self._api = api
         self._device = device
         self._idx = idx
+        self._hub_device_id = hub_device_id
         self._attr_name = name
         self._available = True
         self._unsub_report = None
@@ -158,13 +162,18 @@ class LifeSmartSwitch(SwitchEntity):
     @property
     def device_info(self) -> DeviceInfo:
         """Return device info."""
-        return DeviceInfo(
+        info = DeviceInfo(
             identifiers={(DOMAIN, self._device['me'])},
             name=self._device.get('name', 'LifeSmart Switch'),
             manufacturer=MANUFACTURER,
             model=self._device.get('devtype'),
             sw_version=self._device.get('epver'),
         )
+        # D22: link under the hub device. `via_device_id` (not the deprecated
+        # `via_device` tuple) — see __init__.py rationale.
+        if self._hub_device_id:
+            info["via_device_id"] = self._hub_device_id
+        return info
 
     async def async_turn_on(self, **kwargs):
         """Turn the switch on."""

@@ -9,9 +9,13 @@ import voluptuous as vol
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant, ServiceCall
 from homeassistant.exceptions import ConfigEntryNotReady
-from homeassistant.helpers import entity_registry as er, issue_registry as ir
+from homeassistant.helpers import (
+    device_registry as dr,
+    entity_registry as er,
+    issue_registry as ir,
+)
 from homeassistant.helpers.event import async_track_time_interval
-from .const import DOMAIN, PLATFORMS, API_TIMEOUT
+from .const import DOMAIN, PLATFORMS, API_TIMEOUT, MANUFACTURER, HUB_MODEL_NAMES
 from .api import LifeSmartAPI
 from .coordinator import LifeSmartCoordinator
 
@@ -117,12 +121,40 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         d["me"]: d for d in devices if isinstance(d, dict) and isinstance(d.get("me"), str)
     })
 
+    # D22 (R15, 2026-08-03): register the hub as a real device up-front so
+    # every sub-device can point at it via `via_device_id`, giving the HA UI
+    # a hub → sub-device hierarchy.
+    #
+    # We must use `via_device_id` (the registry ID string), NOT the older
+    # `via_device=(DOMAIN, identifier)` tuple: as of HA 2026.8 identifiers are
+    # only unique *per config entry*, so an identifier pair no longer names a
+    # single device unambiguously and `via_device` is deprecated.
+    # Creating the device here (rather than relying on the hub-level entities
+    # in sensor.py / button.py) also removes a setup-order race — platforms
+    # are forwarded concurrently, so a sub-device could otherwise be created
+    # before the hub device exists.
+    hub_identifier = f"hub_{entry.data['host']}"
+    _mgatype = hub_info.get("mgatype")
+    hub_device = dr.async_get(hass).async_get_or_create(
+        config_entry_id=entry.entry_id,
+        identifiers={(DOMAIN, hub_identifier)},
+        name=entry.title or "LifeSmart Hub",
+        manufacturer=MANUFACTURER,
+        model=(
+            HUB_MODEL_NAMES.get(_mgatype, _mgatype)
+            if isinstance(_mgatype, str)
+            else "LifeSmart Hub"
+        ),
+        sw_version=hub_info.get("ver"),
+    )
+
     domain_data["entries"][entry.entry_id] = {
         "api": api,
         "devices": devices,
         "hub_info": hub_info,
         "host": entry.data["host"],
         "coordinator": coordinator,
+        "hub_device_id": hub_device.id,
     }
 
     # D14 (2026-05-24): R10's unique_id migration is now handled by

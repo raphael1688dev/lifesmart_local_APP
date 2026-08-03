@@ -35,6 +35,8 @@ async def async_setup_entry(
     entry_data = hass.data[DOMAIN]["entries"][config_entry.entry_id]
     api = entry_data["api"]
     coordinator: Optional[LifeSmartCoordinator] = entry_data.get("coordinator")
+    # D22: hub device registry ID — sub-devices hang off it via via_device_id.
+    hub_device_id: Optional[str] = entry_data.get("hub_device_id")
     devices = entry_data.get("devices") or []
     if not devices:
         try:
@@ -62,6 +64,7 @@ async def async_setup_entry(
                                 device=device,
                                 idx="T",
                                 coordinator=coordinator,
+                                hub_device_id=hub_device_id,
                             )
                         )
                 elif device.get("devtype") == "SL_P" and "data" in device and "P8" in device["data"]:
@@ -72,6 +75,7 @@ async def async_setup_entry(
                             device=device,
                             idx="P8",
                             coordinator=coordinator,
+                            hub_device_id=hub_device_id,
                         )
                     )
                 elif (
@@ -90,6 +94,7 @@ async def async_setup_entry(
                             device=device,
                             idx="V",
                             coordinator=coordinator,
+                            hub_device_id=hub_device_id,
                         )
                     )
 
@@ -99,7 +104,12 @@ async def async_setup_entry(
                 if "lDbm" in device:
                     _LOGGER.debug("Found signal sensor in %s", device.get('name'))
                     sensors.append(
-                        LifeSmartSignalSensor(api=api, device=device, coordinator=coordinator)
+                        LifeSmartSignalSensor(
+                            api=api,
+                            device=device,
+                            coordinator=coordinator,
+                            hub_device_id=hub_device_id,
+                        )
                     )
             except KeyError as e:
                 _LOGGER.error("Missing required device data: %s", e)
@@ -145,6 +155,7 @@ class LifeSmartBaseSensor(SensorEntity):
         device: Dict[str, Any],
         idx: Optional[str] = None,
         coordinator: Optional[LifeSmartCoordinator] = None,
+        hub_device_id: Optional[str] = None,
     ) -> None:
         self._api = api
         self._device = device
@@ -161,6 +172,10 @@ class LifeSmartBaseSensor(SensorEntity):
                 model=device.get('devtype', 'Unknown'),
                 sw_version=device.get('epver', 'Unknown')
             )
+            # D22: link under the hub device. `via_device_id` (not the
+            # deprecated `via_device` tuple) — see __init__.py rationale.
+            if hub_device_id:
+                self._attr_device_info["via_device_id"] = hub_device_id
         except KeyError as e:
             _LOGGER.error("Missing required device info field: %s", e)
             raise
@@ -231,8 +246,9 @@ class LifeSmartTemperatureSensor(LifeSmartBaseSensor):
         device: Dict[str, Any],
         idx: str,
         coordinator: Optional[LifeSmartCoordinator] = None,
+        hub_device_id: Optional[str] = None,
     ) -> None:
-        super().__init__(api, device, idx, coordinator=coordinator)
+        super().__init__(api, device, idx, coordinator=coordinator, hub_device_id=hub_device_id)
         try:
             # HA 2026.5 naming: _attr_name = function only;
             # device name is provided by DeviceInfo (base class).
@@ -305,8 +321,9 @@ class LifeSmartBatterySensor(LifeSmartBaseSensor):
         device: Dict[str, Any],
         idx: str,
         coordinator: Optional[LifeSmartCoordinator] = None,
+        hub_device_id: Optional[str] = None,
     ) -> None:
-        super().__init__(api, device, idx, coordinator=coordinator)
+        super().__init__(api, device, idx, coordinator=coordinator, hub_device_id=hub_device_id)
         try:
             # HA 2026.5 naming: _attr_name = function only;
             # device name is provided by DeviceInfo (base class).
@@ -378,8 +395,9 @@ class LifeSmartSignalSensor(LifeSmartBaseSensor):
         api: Any,
         device: Dict[str, Any],
         coordinator: Optional[LifeSmartCoordinator] = None,
+        hub_device_id: Optional[str] = None,
     ) -> None:
-        super().__init__(api, device, idx=None, coordinator=coordinator)
+        super().__init__(api, device, idx=None, coordinator=coordinator, hub_device_id=hub_device_id)
         try:
             # HA 2026.5 naming: function only; device name from DeviceInfo.
             self._attr_name = "Signal strength"

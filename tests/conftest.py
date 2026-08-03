@@ -74,6 +74,13 @@ def _install_ha_stubs() -> None:
     ent_reg.async_get = lambda hass: None
     sys.modules["homeassistant.helpers.entity_registry"] = ent_reg
 
+    # device_registry: __init__.py registers the hub device (D22) so
+    # sub-devices can reference it with via_device_id.
+    dev_reg = types.ModuleType("homeassistant.helpers.device_registry")
+    dev_reg.async_get = lambda hass: None
+    dev_reg.DeviceEntry = _Stub
+    sys.modules["homeassistant.helpers.device_registry"] = dev_reg
+
     event = types.ModuleType("homeassistant.helpers.event")
     event.async_track_time_interval = lambda *a, **kw: (lambda: None)
     sys.modules["homeassistant.helpers.event"] = event
