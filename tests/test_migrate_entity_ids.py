@@ -134,3 +134,29 @@ def test_no_object_part_is_skipped() -> None:
         config_entry_id="entry_A",
     ))
     assert _run(reg, "entry_A") == []
+
+
+def test_uppercase_is_lowercased_not_replaced() -> None:
+    """R17 regression: uppercase must become lowercase, not '_'.
+
+    Before the fix `switch.foo_7D01` migrated to `switch.foo_7_01`.
+    """
+    reg = FakeEntityRegistry()
+    reg._entries.append(FakeEntityEntry(
+        entity_id="switch.foo_7D01",
+        config_entry_id="entry_A",
+    ))
+    assert _run(reg, "entry_A") == [("switch.foo_7D01", "switch.foo_7d01")]
+
+
+def test_mixed_case_and_hyphen_survives_intact() -> None:
+    """R17 regression: the exact id shape that got mangled to `tv_z_w_8_qz_7_01`."""
+    reg = FakeEntityRegistry()
+    reg._entries.append(FakeEntityEntry(
+        entity_id="remote.tv_AzQAAPWwAAEAAA8-Gqz_7D01",
+        config_entry_id="entry_A",
+    ))
+    assert _run(reg, "entry_A") == [(
+        "remote.tv_AzQAAPWwAAEAAA8-Gqz_7D01",
+        "remote.tv_azqaapwwaaeaaa8_gqz_7d01",
+    )]

@@ -495,5 +495,8 @@ class LifeSmartHubInfoSensor(SensorEntity):
             name=config_entry_title,
             manufacturer=MANUFACTURER,
             model=HUB_MODEL_NAMES.get(mgatype, mgatype) if isinstance(mgatype, str) else "LifeSmart Hub",
-            sw_version=hub_info.get("ver"),
         )
+        # R17: omit sw_version when unknown — None would wipe the stored value.
+        _ver = hub_info.get("ver")
+        if _ver is not None:
+            self._attr_device_info["sw_version"] = _ver

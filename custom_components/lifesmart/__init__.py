@@ -135,18 +135,25 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     # before the hub device exists.
     hub_identifier = f"hub_{entry.data['host']}"
     _mgatype = hub_info.get("mgatype")
-    hub_device = dr.async_get(hass).async_get_or_create(
-        config_entry_id=entry.entry_id,
-        identifiers={(DOMAIN, hub_identifier)},
-        name=entry.title or "LifeSmart Hub",
-        manufacturer=MANUFACTURER,
-        model=(
+    hub_kwargs: dict = {
+        "config_entry_id": entry.entry_id,
+        "identifiers": {(DOMAIN, hub_identifier)},
+        "name": entry.title or "LifeSmart Hub",
+        "manufacturer": MANUFACTURER,
+        "model": (
             HUB_MODEL_NAMES.get(_mgatype, _mgatype)
             if isinstance(_mgatype, str)
             else "LifeSmart Hub"
         ),
-        sw_version=hub_info.get("ver"),
-    )
+    }
+    # R17: only pass sw_version when we actually know it. Passing None is
+    # not the same as omitting it — async_get_or_create treats None as "set
+    # to None" and would wipe the version we stored on a previous boot every
+    # time cfg:getver fails (D17 already raises an issue for that case).
+    _ver = hub_info.get("ver")
+    if _ver is not None:
+        hub_kwargs["sw_version"] = _ver
+    hub_device = dr.async_get(hass).async_get_or_create(**hub_kwargs)
 
     domain_data["entries"][entry.entry_id] = {
         "api": api,
@@ -388,7 +395,10 @@ def _migrate_entity_ids(hass: HomeAssistant, entry: ConfigEntry) -> None:
         domain, _, obj = old_id.partition(".")
         if not obj or not re.search(r"[^a-z0-9_]", obj):
             continue
-        fixed_obj = re.sub(r"[^a-z0-9_]", "_", obj)
+        # R17: lower() FIRST, same order as generate_entity_id / remote._slugify.
+        # Without it every uppercase letter matched [^a-z0-9_] and became '_',
+        # mangling mixed-case ids (e.g. remote.tv_AzQ..8-Gqz_7D01 -> tv_z_w_8_qz_7_01).
+        fixed_obj = re.sub(r"[^a-z0-9_]", "_", obj.lower())
         fixed_obj = re.sub(r"_+", "_", fixed_obj).strip("_")
         if not fixed_obj or fixed_obj == obj:
             continue

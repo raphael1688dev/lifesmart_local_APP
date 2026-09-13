@@ -1,6 +1,7 @@
 """Platform for LifeSmart switch integration."""
 import asyncio
 import logging
+from typing import Optional
 from homeassistant.components.switch import SwitchEntity
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
@@ -69,7 +70,7 @@ async def async_setup_entry(
 
 class LifeSmartSwitch(SwitchEntity):
     _attr_should_poll = False
-    def __init__(self, api, device, idx, name, hub_device_id=None):
+    def __init__(self, api, device, idx, name, hub_device_id: Optional[str] = None):
         """Initialize the switch."""
         self._api = api
         self._device = device
