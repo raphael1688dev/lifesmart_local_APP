@@ -86,7 +86,11 @@ async def async_setup_entry(
             # don't collide. The block below auto-renames legacy entity_ids
             # in the registry to the new agt-bearing form.
             base_slug = _slugify(data['device'].get('name') or 'remote')
-            desired_object_id = f"{base_slug}_{agt}_{device_id}".lower()
+            # R16: run the WHOLE object id through _slugify, not just the
+            # name — `agt` can carry '-' (base64-ish) which HA rejects in
+            # entity_ids from 2027.2. Without this the rename below would
+            # fight _migrate_entity_ids every boot (it restores the bad id).
+            desired_object_id = _slugify(f"{base_slug}_{agt}_{device_id}")
             desired_entity_id = f"remote.{desired_object_id}"
             unique_id = f"remote_{agt}_{device_id}"
             existing_entity_id = registry.async_get_entity_id("remote", DOMAIN, unique_id)
@@ -130,7 +134,8 @@ class LifeSmartRemote(remote.RemoteEntity):
         self._attr_unique_id = f"remote_{agt}_{device_id}"
         base = _slugify(device.get("name") or name or "remote")
         # R10-b: entity_id also needs agt for the same reason as unique_id.
-        self.entity_id = f"remote.{base}_{agt}_{device_id}"
+        # R16: slugify the whole object id so a '-' in agt can't leak in.
+        self.entity_id = f"remote.{_slugify(f'{base}_{agt}_{device_id}')}"
         self._available = True
 
 

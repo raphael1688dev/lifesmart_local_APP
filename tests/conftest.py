@@ -127,6 +127,37 @@ def _install_ha_stubs() -> None:
     cfg.ConfigEntry = _Stub
     sys.modules["homeassistant.config_entries"] = cfg
 
+    # R16: enough surface to import remote.py so its pure _slugify can be
+    # tested. helpers.entity / entity_platform / components.remote.
+    ent = types.ModuleType("homeassistant.helpers.entity")
+
+    class _DeviceInfo(dict):
+        def __init__(self, **kw) -> None:
+            super().__init__(**kw)
+
+    ent.DeviceInfo = _DeviceInfo
+    sys.modules["homeassistant.helpers.entity"] = ent
+
+    ent_plat = types.ModuleType("homeassistant.helpers.entity_platform")
+    ent_plat.AddEntitiesCallback = _Stub
+    sys.modules["homeassistant.helpers.entity_platform"] = ent_plat
+
+    components = types.ModuleType("homeassistant.components")
+    components.__path__ = []  # type: ignore[attr-defined]
+    sys.modules["homeassistant.components"] = components
+
+    remote_mod = types.ModuleType("homeassistant.components.remote")
+
+    class _RemoteEntity:
+        pass
+
+    remote_mod.RemoteEntity = _RemoteEntity
+    # PEP 562: any other attribute remote.py might reference resolves to a
+    # harmless stub instead of failing at import.
+    remote_mod.__getattr__ = lambda name: _Stub  # type: ignore[attr-defined]
+    sys.modules["homeassistant.components.remote"] = remote_mod
+    components.remote = remote_mod  # type: ignore[attr-defined]
+
 
 def _install_voluptuous_stub() -> None:
     """Minimal voluptuous stub — only `Schema`, `Required`, `Any` are used in
