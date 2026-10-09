@@ -49,6 +49,7 @@ class LifeSmartHubRebootButton(ButtonEntity):
     _attr_should_poll = False
     _attr_device_class = ButtonDeviceClass.RESTART
     _attr_entity_category = EntityCategory.CONFIG
+    _attr_has_entity_name = True  # R18: "Reboot" + hub device name
 
     def __init__(
         self,
@@ -74,9 +75,10 @@ class LifeSmartHubRebootButton(ButtonEntity):
             model=HUB_MODEL_NAMES.get(mgatype, mgatype) if isinstance(mgatype, str) else "LifeSmart Hub",
         )
         # R17: omit sw_version when unknown — None would wipe the stored value.
+        # R18: str() — HA rejects non-str sw_version from 2026.12.0.
         _ver = hub_info.get("ver")
         if _ver is not None:
-            self._attr_device_info["sw_version"] = _ver
+            self._attr_device_info["sw_version"] = str(_ver)
 
     async def async_press(self) -> None:
         """Send cfg:reboot. Hub will ack then restart immediately."""

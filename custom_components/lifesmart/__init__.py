@@ -150,9 +150,12 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     # not the same as omitting it — async_get_or_create treats None as "set
     # to None" and would wipe the version we stored on a previous boot every
     # time cfg:getver fails (D17 already raises an issue for that case).
+    # R18: coerce to str. LI §3.3.10 L1557 only says `ver` is a "version
+    # number" without a type; HA's device registry warns on non-str
+    # sw_version today and rejects it from 2026.12.0 (`_validate_str`).
     _ver = hub_info.get("ver")
     if _ver is not None:
-        hub_kwargs["sw_version"] = _ver
+        hub_kwargs["sw_version"] = str(_ver)
     hub_device = dr.async_get(hass).async_get_or_create(**hub_kwargs)
 
     domain_data["entries"][entry.entry_id] = {
@@ -167,8 +170,9 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     # D14 (2026-05-24): R10's unique_id migration is now handled by
     # async_migrate_entry below — fires when ConfigEntry.version < 2. We
     # still call it here as a defensive idempotent re-run to catch entries
-    # whose migration may have failed on first boot (e.g. discovery was
-    # empty so we had no devices to look up agt against).
+    # whose migration ran against an empty device list (hub reachable but
+    # `eps` returned nothing). R18: unreachable-hub failures no longer reach
+    # this point — the migration raises ConfigEntryNotReady instead.
     _migrate_unique_ids(hass, entry, devices)
     _migrate_entity_ids(hass, entry)
 
@@ -200,6 +204,13 @@ async def async_migrate_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
       Migration walks the entity registry and rewrites legacy
       `<feature>_<me>` ids to `<feature>_<agt>_<me>`. We need device data
       (the `me` → `agt` map) so we momentarily start the API to fetch eps.
+
+    Error handling (R18, 2026-10-09): if the hub cannot be reached we raise
+    ConfigEntryNotReady so HA puts the entry in SETUP_RETRY and re-runs the
+    migration later (supported since HA 2026.10 — see dev blog 2026-09-17).
+    Before R18 we bumped the version anyway and relied on async_setup_entry's
+    idempotent re-run; functionally equivalent, but the entry version then
+    claimed a migration that had not actually happened yet.
     """
     _LOGGER.info("Migrating config entry from version %s", entry.version)
 
@@ -227,9 +238,10 @@ async def async_migrate_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
                     devices = [d for d in msg.values() if isinstance(d, dict)]
         except (asyncio.TimeoutError, OSError) as err:
             _LOGGER.warning(
-                "Migration discovery failed (%s) — async_setup_entry will retry "
-                "the migration idempotently on next boot.", err,
+                "Migration discovery failed (%s) — entry goes to SETUP_RETRY "
+                "and the migration is re-attempted later.", err,
             )
+            raise ConfigEntryNotReady(f"Hub unreachable during migration: {err}") from err
         finally:
             try:
                 await api.async_stop()

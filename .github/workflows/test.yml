@@ -17,7 +17,11 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        python-version: ["3.12", "3.13"]
+        # HA Core requires Python >= 3.14.2 since 2026.5.0 (our hacs.json
+        # minimum), so 3.14 is the only interpreter this code ever runs on.
+        # R18 (2026-10-09): matrix was 3.12/3.13 — neither is an HA-supported
+        # version, so the gate never exercised the real runtime.
+        python-version: ["3.14"]
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -43,7 +47,7 @@ jobs:
 
       - uses: actions/setup-python@v5
         with:
-          python-version: "3.13"
+          python-version: "3.14"
 
       - name: Syntax check every .py
         # Catches "manifest.json is fine but a sibling .py won't import"
@@ -58,7 +62,7 @@ jobs:
 
       - uses: actions/setup-python@v5
         with:
-          python-version: "3.13"
+          python-version: "3.14"
 
       - name: Validate JSON files
         run: |

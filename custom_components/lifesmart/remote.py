@@ -112,6 +112,11 @@ async def async_setup_entry(
 class LifeSmartRemote(remote.RemoteEntity):
     """LifeSmart Remote Entity."""
     _attr_should_poll = False
+    # R18: HA 2026.5 naming. The remote IS the device, so the entity has no
+    # name of its own and HA shows the device name. Before R18 `_attr_name`
+    # (and a `name` property override) duplicated the device name.
+    _attr_has_entity_name = True
+    _attr_name = None
 
     def __init__(
         self,
@@ -127,7 +132,8 @@ class LifeSmartRemote(remote.RemoteEntity):
         self._hub_device_id = hub_device_id
 
         self._remote_data_list = remote_data_list
-        self._attr_name = name
+        # `name` is kept as the slug / log fallback only (R18) — see class note.
+        self._device_name = device.get("name") or name or "Remote"
         device_id = device["me"]
         agt = device.get("agt", "")
         # Include agt (R10) — `me` collides across hubs on system devices.
@@ -156,7 +162,7 @@ class LifeSmartRemote(remote.RemoteEntity):
             self._all_keys.update({key: remote_id for key in remote_data["keys"]})
         
       
-        _LOGGER.debug("Initializing LifeSmart remote: %s", self._attr_name)
+        _LOGGER.debug("Initializing LifeSmart remote: %s", self._device_name)
 
     async def _async_refresh_data(self, force: bool = False) -> None:
         now = time.monotonic()
@@ -197,11 +203,6 @@ class LifeSmartRemote(remote.RemoteEntity):
                 self._last_refresh = time.monotonic()
 
     @property
-    def name(self) -> str:
-        """Return the name of the remote."""
-        return self._attr_name
-
-    @property
     def available(self) -> bool:
         """Return True if entity is available."""
         return self._available
@@ -215,7 +216,7 @@ class LifeSmartRemote(remote.RemoteEntity):
     def device_info(self) -> DeviceInfo:
         info = DeviceInfo(
             identifiers={(DOMAIN, self._device["me"])},
-            name=self._device.get("name", "LifeSmart Remote"),
+            name=self._device_name,
             manufacturer=MANUFACTURER,
             model=self._device.get("devtype"),
             sw_version=self._device.get("epver"),

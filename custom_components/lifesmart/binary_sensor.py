@@ -90,6 +90,7 @@ class LifeSmartConnectivitySensor(BinarySensorEntity):
     _attr_should_poll = False
     _attr_device_class = BinarySensorDeviceClass.CONNECTIVITY
     _attr_entity_category = EntityCategory.DIAGNOSTIC
+    _attr_has_entity_name = True  # R18: "Connectivity" + device name
 
     _api: Any
     _device: Dict[str, Any]

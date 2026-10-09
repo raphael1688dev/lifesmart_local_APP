@@ -141,6 +141,10 @@ class LifeSmartBaseSensor(SensorEntity):
     """
 
     _attr_should_poll = False
+    # R18: HA 2026.5 naming — entity name describes only the function
+    # ("Battery"); the frontend prepends the device name. Explicit entity_ids
+    # are unaffected (platform uses our entity_id as suggested object id).
+    _attr_has_entity_name = True
     _api: Any
     _device: Dict[str, Any]
     _idx: Optional[str]
@@ -457,6 +461,7 @@ class LifeSmartHubInfoSensor(SensorEntity):
 
     _attr_should_poll = False
     _attr_entity_category = EntityCategory.DIAGNOSTIC
+    _attr_has_entity_name = True  # R18: "Firmware version" + hub device name
 
     # Field-specific labels and unique_id slugs.
     _FIELD_META = {
@@ -497,6 +502,7 @@ class LifeSmartHubInfoSensor(SensorEntity):
             model=HUB_MODEL_NAMES.get(mgatype, mgatype) if isinstance(mgatype, str) else "LifeSmart Hub",
         )
         # R17: omit sw_version when unknown — None would wipe the stored value.
+        # R18: str() — HA rejects non-str sw_version from 2026.12.0.
         _ver = hub_info.get("ver")
         if _ver is not None:
-            self._attr_device_info["sw_version"] = _ver
+            self._attr_device_info["sw_version"] = str(_ver)

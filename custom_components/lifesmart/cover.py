@@ -57,11 +57,16 @@ async def async_setup_entry(
 class LifeSmartCover(CoverEntity):
     """Representation of a LifeSmart cover."""
     _attr_should_poll = False
-    
+    # R18: HA 2026.5 naming. The cover IS the device, so the entity carries
+    # no name of its own (`_attr_name = None`) and HA shows the device name.
+    # Before R18 `_attr_name` duplicated the device name.
+    _attr_has_entity_name = True
+    _attr_name = None
+
     def __init__(self, api, device, idx: Optional[str] = None, hub_device_id: Optional[str] = None):
         self._api = api
         self._device = device
-        self._attr_name = device.get('name', 'MINS Curtain')
+        device_name = device.get('name', 'MINS Curtain')
         # Include agt (R10) — `me` collides across hubs on system devices.
         self._attr_unique_id = f"cover_{device.get('agt', '')}_{device['me']}"
         self._attr_device_class = CoverDeviceClass.CURTAIN
@@ -78,11 +83,11 @@ class LifeSmartCover(CoverEntity):
         device_id = device["me"]
         self.entity_id = f"cover.{generate_entity_id(device_type, hub_id, device_id, self._idx)}"
 
-        _LOGGER.debug("Initializing cover: %s (ID: %s)", self._attr_name, self._attr_unique_id)
-        
+        _LOGGER.debug("Initializing cover: %s (ID: %s)", device_name, self._attr_unique_id)
+
         self._attr_device_info = DeviceInfo(
             identifiers={(DOMAIN, device['me'])},
-            name=self._attr_name,
+            name=device_name,
             manufacturer=MANUFACTURER,
             model=device.get('devtype', 'SL_P'),
             sw_version=device.get('epver', 'Unknown')
@@ -136,7 +141,7 @@ class LifeSmartCover(CoverEntity):
 
     async def async_open_cover(self, **kwargs):
         """Open the cover."""
-        _LOGGER.debug("Opening cover: %s", self._attr_name)
+        _LOGGER.debug("Opening cover: %s", self.entity_id)
         # 官方規範：加入 tag: "m"
         await self._api.send_command("ep", {
             "tag": "m",
@@ -148,7 +153,7 @@ class LifeSmartCover(CoverEntity):
 
     async def async_close_cover(self, **kwargs):
         """Close the cover."""
-        _LOGGER.debug("Closing cover: %s", self._attr_name)
+        _LOGGER.debug("Closing cover: %s", self.entity_id)
         await self._api.send_command("ep", {
             "tag": "m",
             "me": self._device["me"],
@@ -159,7 +164,7 @@ class LifeSmartCover(CoverEntity):
 
     async def async_stop_cover(self, **kwargs):
         """Stop the cover."""
-        _LOGGER.debug("Stopping cover: %s", self._attr_name)
+        _LOGGER.debug("Stopping cover: %s", self.entity_id)
         await self._api.send_command("ep", {
             "tag": "m",
             "me": self._device["me"],

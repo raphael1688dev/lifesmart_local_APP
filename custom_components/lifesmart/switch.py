@@ -70,6 +70,10 @@ async def async_setup_entry(
 
 class LifeSmartSwitch(SwitchEntity):
     _attr_should_poll = False
+    # R18: HA 2026.5 naming — `_attr_name` is the channel label only ("L1" or
+    # the firmware-provided channel name); the frontend prepends the device name.
+    _attr_has_entity_name = True
+
     def __init__(self, api, device, idx, name, hub_device_id: Optional[str] = None):
         """Initialize the switch."""
         self._api = api

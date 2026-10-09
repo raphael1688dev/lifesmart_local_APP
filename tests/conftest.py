@@ -125,6 +125,16 @@ def _install_ha_stubs() -> None:
     # homeassistant.config_entries
     cfg = types.ModuleType("homeassistant.config_entries")
     cfg.ConfigEntry = _Stub
+
+    # R18: enough surface to import config_flow.py so its pure validators
+    # can be tested. `class X(ConfigFlow, domain=DOMAIN)` passes a class
+    # keyword, which a plain class would reject — swallow it here.
+    class _ConfigFlow:
+        def __init_subclass__(cls, domain=None, **kwargs) -> None:
+            super().__init_subclass__(**kwargs)
+
+    cfg.ConfigFlow = _ConfigFlow
+    cfg.OptionsFlow = _Stub
     sys.modules["homeassistant.config_entries"] = cfg
 
     # R16: enough surface to import remote.py so its pure _slugify can be
@@ -160,11 +170,23 @@ def _install_ha_stubs() -> None:
 
 
 def _install_voluptuous_stub() -> None:
-    """Minimal voluptuous stub — only `Schema`, `Required`, `Any` are used in
-    lifesmart/__init__.py services registration. We don't need real validation
-    for the pure-function tests.
+    """Minimal voluptuous stub — only `Schema`, `Required`, `Any`, `Invalid`
+    are used by lifesmart/__init__.py (services) and config_flow.py
+    (validators). We don't need real validation for the pure-function tests.
+
+    R18: if the real library is importable (local venv with voluptuous or
+    probatio installed) use it — the config_flow tests then exercise the
+    genuine `Invalid` hierarchy. CI installs only pytest and gets the stub,
+    whose `Invalid` mirrors the real one (subclass of Exception, NOT of
+    ValueError — that distinction is exactly what R18 fixed).
     """
     if "voluptuous" in sys.modules:
+        return
+    try:
+        import voluptuous  # noqa: F401  (real package present — prefer it)
+    except ImportError:
+        pass
+    else:
         return
 
     vol = types.ModuleType("voluptuous")

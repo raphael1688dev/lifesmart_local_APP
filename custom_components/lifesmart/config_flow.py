@@ -3,6 +3,7 @@ import asyncio
 import voluptuous as vol
 import logging
 import ipaddress
+from typing import Any, Dict
 from homeassistant import config_entries
 from homeassistant.const import CONF_HOST, CONF_TOKEN
 from homeassistant.core import callback
@@ -18,7 +19,15 @@ def _has_devices(msg) -> bool:
         return any(isinstance(v, dict) for v in msg.values())
     return False
 
-def validate_host(host):
+def validate_host(host: Any) -> str:
+    """Return a normalised host (IP literal or hostname) or raise vol.Invalid."""
+    if not isinstance(host, str):
+        raise vol.Invalid("Invalid host")
+    host = host.strip()
+    if not host:
+        # R18: `vol.Required(CONF_HOST): str` accepts "", and "" passed the
+        # hostname checks below, so an empty host used to reach discovery.
+        raise vol.Invalid("Empty host")
     try:
         ipaddress.ip_address(host)
         return host
@@ -27,7 +36,8 @@ def validate_host(host):
             raise vol.Invalid("Invalid hostname")
         return host
 
-def validate_token(token):
+def validate_token(token: Any) -> str:
+    """Return a stripped token or raise vol.Invalid."""
     if not isinstance(token, str):
         raise vol.Invalid("Invalid token")
     token = token.strip()
@@ -36,6 +46,32 @@ def validate_token(token):
     if not token.isalnum():
         raise vol.Invalid("Invalid token characters")
     return token
+
+
+def _validate_input(user_input: Dict[str, Any]) -> Dict[str, str]:
+    """Normalise host/token in place and return field-level errors.
+
+    R18 (2026-10-09): `validate_*` raise `vol.Invalid`, which is NOT a
+    ValueError — true for voluptuous 0.16 and for probatio 0.13 (what HA
+    aliases `voluptuous` to since 2026.9). The flow steps used to call the
+    validators inside a `try` that only caught ValueError & friends, so a bad
+    token escaped the step entirely and the UI showed "Unknown error
+    occurred" instead of the `invalid_token` / `invalid_host` messages that
+    had been sitting unused in translations since 2026-05.
+
+    Returns {} when both fields are valid. Keys are the schema field names so
+    HA renders each message next to the offending field.
+    """
+    errors: Dict[str, str] = {}
+    try:
+        user_input[CONF_HOST] = validate_host(user_input.get(CONF_HOST))
+    except vol.Invalid:
+        errors[CONF_HOST] = "invalid_host"
+    try:
+        user_input[CONF_TOKEN] = validate_token(user_input.get(CONF_TOKEN))
+    except vol.Invalid:
+        errors[CONF_TOKEN] = "invalid_token"
+    return errors
 
 DATA_SCHEMA = vol.Schema(
     {
@@ -61,12 +97,14 @@ class LifeSmartConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         return LifeSmartOptionsFlowHandler(config_entry)
 
     async def async_step_user(self, user_input=None):
-        errors = {}
+        errors: Dict[str, str] = {}
         if user_input is not None:
+            # R18: field validation first; only touch the network when the
+            # input is well-formed. See _validate_input for why this is not
+            # inside the try below.
+            errors = _validate_input(user_input)
+        if user_input is not None and not errors:
             try:
-                user_input[CONF_HOST] = validate_host(user_input[CONF_HOST])
-                user_input[CONF_TOKEN] = validate_token(user_input[CONF_TOKEN])
-
                 await self.async_set_unique_id(user_input[CONF_HOST])
                 self._abort_if_unique_id_configured()
 
@@ -106,14 +144,13 @@ class LifeSmartConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         return self.async_show_form(step_id="user", data_schema=DATA_SCHEMA, errors=errors)
 
     async def async_step_reconfigure(self, user_input=None):
-        errors = {}
+        errors: Dict[str, str] = {}
         entry = self.hass.config_entries.async_get_entry(self.context["entry_id"])
 
         if user_input is not None:
+            errors = _validate_input(user_input)  # R18, same as async_step_user
+        if user_input is not None and not errors:
             try:
-                user_input[CONF_HOST] = validate_host(user_input[CONF_HOST])
-                user_input[CONF_TOKEN] = validate_token(user_input[CONF_TOKEN])
-
                 api = LifeSmartAPI(
                     host=user_input[CONF_HOST],
                     model=user_input.get("model", DEFAULT_MODEL),
