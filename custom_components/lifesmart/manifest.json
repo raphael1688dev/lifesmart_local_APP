@@ -1,7 +1,6 @@
 {
     "domain": "lifesmart",
     "name": "Local LifeSmart",
-    "categories": ["hubs_protocols.smart_home_hubs"],
     "codeowners": ["@raphael1688dev"],
     "config_flow": true,
     "dependencies": [],
