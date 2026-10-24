@@ -33,20 +33,10 @@
             "already_configured": "裝置已設定過"
         }
     },
-    "options": {
-        "step": {
-            "init": {
-                "title": "LifeSmart 中樞選項",
-                "data": {
-                    "model": "中樞型號"
-                }
-            }
-        }
-    },
     "issues": {
         "hub_unreachable": {
             "title": "LifeSmart 中樞無法連線",
-            "description": "整合啟動 {minutes} 分鐘內都無法與中樞 {host} 取得回應。請確認中樞已上線、IP 位址正確、且與 HA 在同一網段。"
+            "description": "中樞 {host} 已有 {minutes} 分鐘沒有回應。請確認中樞已上線、IP 位址正確、且與 HA 在同一網段。中樞恢復回應後此通知會自動消失。"
         },
         "hub_version_unknown": {
             "title": "無法取得中樞韌體版本",

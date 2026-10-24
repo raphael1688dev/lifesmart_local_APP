@@ -33,20 +33,10 @@
             "already_configured": "Device is already configured"
         }
     },
-    "options": {
-        "step": {
-            "init": {
-                "title": "LifeSmart Hub Options",
-                "data": {
-                    "model": "Hub Model"
-                }
-            }
-        }
-    },
     "issues": {
         "hub_unreachable": {
             "title": "LifeSmart hub is unreachable",
-            "description": "No response from hub at {host} after {minutes} minutes. Check that the hub is powered on, the IP is correct, and HA shares the same LAN segment."
+            "description": "The hub at {host} has not answered for {minutes} minutes. Check that the hub is powered on, the IP is correct, and Home Assistant shares the same LAN segment. This notice clears itself once the hub answers again."
         },
         "hub_version_unknown": {
             "title": "Cannot read hub firmware version",

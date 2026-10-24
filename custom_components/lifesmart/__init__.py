@@ -2,6 +2,7 @@
 import logging
 import re
 import socket
+import time
 import asyncio
 from datetime import timedelta
 from typing import Optional
@@ -19,6 +20,43 @@ from .const import DOMAIN, PLATFORMS, API_TIMEOUT
 from .api import LifeSmartAPI
 from .coordinator import LifeSmartCoordinator
 from .device_info import hub_device_info_kwargs
+
+# R19 (2026-10-24): raise the `hub_unreachable` repair issue once the hub has
+# not answered the 90 s notify refresh for this long. The translation existed
+# since 2026-05 but nothing created the issue. 5 min = 3-4 missed refreshes,
+# long enough to ride out a hub reboot from the button.
+HUB_UNREACHABLE_AFTER_SECONDS = 300
+
+
+class _HubReachability:
+    """How long the hub has been silent. Pure: the caller passes the clock.
+
+    Only "no answer" counts (timeout / socket error). A hub that answers with
+    an error code is reachable and does not feed this tracker.
+    """
+
+    def __init__(self, threshold_seconds: float = HUB_UNREACHABLE_AFTER_SECONDS) -> None:
+        self._threshold = threshold_seconds
+        self._first_failure: Optional[float] = None
+
+    def record_failure(self, now: float) -> Optional[int]:
+        """Return whole minutes of silence once past the threshold, else None."""
+        if self._first_failure is None:
+            self._first_failure = now
+        elapsed = now - self._first_failure
+        if elapsed < self._threshold:
+            return None
+        return int(elapsed // 60)
+
+    def record_success(self) -> bool:
+        """Reset. Return True if the hub had been failing (issue may exist)."""
+        was_failing = self._first_failure is not None
+        self._first_failure = None
+        return was_failing
+
+
+def _hub_unreachable_issue_id(entry_id: str) -> str:
+    return f"hub_unreachable_{entry_id}"
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -171,11 +209,38 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     except (asyncio.TimeoutError, OSError, KeyError, ValueError) as err:
         _LOGGER.warning("Failed to configure OpenDev event service: %s", err)
 
+    # Setup reached this point, so the hub answered: drop any issue left from
+    # before a restart / reload.
+    issue_id_unreachable = _hub_unreachable_issue_id(entry.entry_id)
+    ir.async_delete_issue(hass, DOMAIN, issue_id_unreachable)
+    reachability = _HubReachability()
+
     async def _refresh_notify(_now) -> None:
+        # The 90 s re-subscription (LI §4: expires after 300 s) doubles as the
+        # hub heartbeat for the `hub_unreachable` repair issue (R19).
         try:
             await api.configure_event_service(local_ip, api.local_port)
-        except (asyncio.TimeoutError, OSError, KeyError, ValueError) as err:
+        except (asyncio.TimeoutError, OSError) as err:
             _LOGGER.debug("Failed to refresh OpenDev event service: %s", err)
+            minutes = reachability.record_failure(time.monotonic())
+            if minutes is not None:
+                ir.async_create_issue(
+                    hass, DOMAIN, issue_id_unreachable,
+                    is_fixable=False,
+                    severity=ir.IssueSeverity.WARNING,
+                    translation_key="hub_unreachable",
+                    translation_placeholders={
+                        "host": entry.data["host"],
+                        "minutes": str(minutes),
+                    },
+                )
+            return
+        except (KeyError, ValueError) as err:
+            # The hub answered; the payload was odd. Reachable.
+            _LOGGER.debug("Unexpected OpenDev event service reply: %s", err)
+        if reachability.record_success():
+            _LOGGER.info("LifeSmart hub %s is answering again", entry.data["host"])
+            ir.async_delete_issue(hass, DOMAIN, issue_id_unreachable)
 
     unsub_notify = async_track_time_interval(hass, _refresh_notify, timedelta(seconds=90))
     domain_data["entries"][entry.entry_id]["unsub_notify"] = unsub_notify
@@ -248,6 +313,8 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     """Unload a config entry."""
     unload_ok = await hass.config_entries.async_unload_platforms(entry, PLATFORMS)
     if unload_ok:
+        # R19: the heartbeat stops with the entry, so its issue would go stale.
+        ir.async_delete_issue(hass, DOMAIN, _hub_unreachable_issue_id(entry.entry_id))
         domain_data = hass.data[DOMAIN]
         entry_data = domain_data["entries"].pop(entry.entry_id, None)
         if entry_data and entry_data.get("unsub_notify"):

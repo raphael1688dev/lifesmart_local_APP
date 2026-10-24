@@ -99,6 +99,7 @@ The integration also offers `lifesmart.send_keys`, which takes a hub `remote_id`
 - **Clock difference too large (code 101).** The integration corrects small offsets itself. If the error persists, sync the Home Assistant host's clock with NTP.
 - **No devices found on the hub.** The hub answered but reported no sub-devices. Check the model/token pair matches the one in the app's OpenDev template.
 - **Integration shows "Retrying setup".** The hub did not answer at startup. Home Assistant retries on its own; check power and network.
+- **Repairs: "LifeSmart hub is unreachable".** The hub has not answered for 5 minutes or more while Home Assistant was running. Check power and network. The notice disappears by itself once the hub answers again.
 - **Repairs: "Cannot read hub firmware version".** The three hub sensors stay empty. Everything else keeps working.
 - **A newly paired device does not appear.** Reload the integration. New devices are only discovered at setup.
 - **Reporting a bug.** Attach the diagnostics file from the integration's menu (**⋮ → Download diagnostics**). Token and signatures are redacted. For logs, add:
@@ -118,7 +119,7 @@ The integration also offers `lifesmart.send_keys`, which takes a hub `remote_id`
 
 ## Upgrades that changed entity IDs
 
-The integration renames affected entities in the registry automatically. Automations, scripts and dashboards that refer to the old entity ID may still need updating, so check them after these upgrades.
+The integration renames affected entities in the registry automatically. Home Assistant does **not** rewrite automations, scripts or dashboards that refer to the old entity ID, so update those references yourself after these upgrades.
 
 | Release | What changed | Who is affected |
 |---|---|---|

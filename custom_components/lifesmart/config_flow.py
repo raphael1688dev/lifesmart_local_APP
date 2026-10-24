@@ -6,7 +6,6 @@ import ipaddress
 from typing import Any, Dict
 from homeassistant import config_entries
 from homeassistant.const import CONF_HOST, CONF_TOKEN
-from homeassistant.core import callback
 from .const import DOMAIN, DEFAULT_MODEL
 from .api import LifeSmartAPI
 
@@ -88,13 +87,13 @@ class LifeSmartConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
     # and rewrites legacy <feature>_<me> unique_ids to <feature>_<agt>_<me>.
     VERSION = 2
 
+    # No options flow (R19, 2026-10-24). The old one saved `model` to
+    # entry.options, which nothing ever read — the "Configure" button looked
+    # like it worked and did nothing. Every setting lives in entry.data and is
+    # changed through async_step_reconfigure, so there is one source of truth.
+
     def __init__(self):
         self._errors = {}
-
-    @staticmethod
-    @callback
-    def async_get_options_flow(config_entry: config_entries.ConfigEntry) -> "LifeSmartOptionsFlowHandler":
-        return LifeSmartOptionsFlowHandler(config_entry)
 
     async def async_step_user(self, user_input=None):
         errors: Dict[str, str] = {}
@@ -193,15 +192,3 @@ class LifeSmartConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         })
         return self.async_show_form(step_id="reconfigure", data_schema=schema, errors=errors)
 
-
-class LifeSmartOptionsFlowHandler(config_entries.OptionsFlow):
-    def __init__(self, config_entry: config_entries.ConfigEntry) -> None:
-        self._config_entry = config_entry
-
-    async def async_step_init(self, user_input=None):
-        if user_input is not None:
-            return self.async_create_entry(title="", data=user_input)
-        schema = vol.Schema({
-            vol.Required("model", default=self._config_entry.data.get("model", DEFAULT_MODEL)): str,
-        })
-        return self.async_show_form(step_id="init", data_schema=schema)
