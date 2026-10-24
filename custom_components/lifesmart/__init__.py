@@ -15,9 +15,10 @@ from homeassistant.helpers import (
     issue_registry as ir,
 )
 from homeassistant.helpers.event import async_track_time_interval
-from .const import DOMAIN, PLATFORMS, API_TIMEOUT, MANUFACTURER, HUB_MODEL_NAMES
+from .const import DOMAIN, PLATFORMS, API_TIMEOUT
 from .api import LifeSmartAPI
 from .coordinator import LifeSmartCoordinator
+from .device_info import hub_device_info_kwargs
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -133,30 +134,16 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     # in sensor.py / button.py) also removes a setup-order race — platforms
     # are forwarded concurrently, so a sub-device could otherwise be created
     # before the hub device exists.
-    hub_identifier = f"hub_{entry.data['host']}"
-    _mgatype = hub_info.get("mgatype")
-    hub_kwargs: dict = {
-        "config_entry_id": entry.entry_id,
-        "identifiers": {(DOMAIN, hub_identifier)},
-        "name": entry.title or "LifeSmart Hub",
-        "manufacturer": MANUFACTURER,
-        "model": (
-            HUB_MODEL_NAMES.get(_mgatype, _mgatype)
-            if isinstance(_mgatype, str)
-            else "LifeSmart Hub"
-        ),
-    }
-    # R17: only pass sw_version when we actually know it. Passing None is
-    # not the same as omitting it — async_get_or_create treats None as "set
-    # to None" and would wipe the version we stored on a previous boot every
-    # time cfg:getver fails (D17 already raises an issue for that case).
-    # R18: coerce to str. LI §3.3.10 L1557 only says `ver` is a "version
-    # number" without a type; HA's device registry warns on non-str
-    # sw_version today and rejects it from 2026.12.0 (`_validate_str`).
-    _ver = hub_info.get("ver")
-    if _ver is not None:
-        hub_kwargs["sw_version"] = str(_ver)
-    hub_device = dr.async_get(hass).async_get_or_create(**hub_kwargs)
+    # R19: the hub's DeviceInfo fields are built once in device_info.py and
+    # shared with sensor.py / button.py so the registry sees one consistent
+    # device. R17 (omit sw_version when unknown — None would wipe the value
+    # stored on a previous boot every time cfg:getver fails) and R18 (str()
+    # coercion; HA rejects non-str sw_version from 2026.12.0) live there.
+    # The registry call additionally needs config_entry_id.
+    hub_device = dr.async_get(hass).async_get_or_create(
+        config_entry_id=entry.entry_id,
+        **hub_device_info_kwargs(entry.data["host"], entry.title, hub_info),
+    )
 
     domain_data["entries"][entry.entry_id] = {
         "api": api,

@@ -36,10 +36,35 @@ def _install_ha_stubs() -> None:
     ha = types.ModuleType("homeassistant")
     sys.modules["homeassistant"] = ha
 
+    # R19: enum-like stub. `SensorDeviceClass.BATTERY`, `UnitOfTemperature.CELSIUS`,
+    # `CoverEntityFeature.OPEN | CoverEntityFeature.CLOSE` all appear in class
+    # bodies, so attribute access must succeed at import time and the values
+    # must support `|` — every member is the int 1.
+    class _EnumMeta(type):
+        def __getattr__(cls, name):
+            if name.startswith("__"):
+                raise AttributeError(name)
+            return 1
+
+    class _AnyEnum(metaclass=_EnumMeta):
+        pass
+
+    def _module_getattr(default):
+        """PEP 562 module __getattr__ returning `default` for any public name."""
+        def _getattr(name):
+            if name.startswith("__"):
+                raise AttributeError(name)
+            return default
+        return _getattr
+
     # homeassistant.const
     const = types.ModuleType("homeassistant.const")
     const.CONF_HOST = "host"
     const.CONF_TOKEN = "token"
+    # R19: PERCENTAGE / UnitOfTemperature / EntityCategory / ... resolve to
+    # the enum-like stub so platform modules import. Dunders must raise so
+    # the import machinery doesn't mistake the module for a package.
+    const.__getattr__ = _module_getattr(_AnyEnum)  # type: ignore[attr-defined]
     sys.modules["homeassistant.const"] = const
 
     # homeassistant.core
@@ -146,6 +171,7 @@ def _install_ha_stubs() -> None:
             super().__init__(**kw)
 
     ent.DeviceInfo = _DeviceInfo
+    ent.EntityCategory = _AnyEnum  # R19: sensor.py imports it from here
     sys.modules["homeassistant.helpers.entity"] = ent
 
     ent_plat = types.ModuleType("homeassistant.helpers.entity_platform")
@@ -167,6 +193,22 @@ def _install_ha_stubs() -> None:
     remote_mod.__getattr__ = lambda name: _Stub  # type: ignore[attr-defined]
     sys.modules["homeassistant.components.remote"] = remote_mod
     components.remote = remote_mod  # type: ignore[attr-defined]
+
+    # R19: enough surface to import sensor.py / binary_sensor.py / cover.py /
+    # switch.py so tests can inspect the entity classes (lifecycle hooks).
+    # The entity base class is a plain class; every other name (device
+    # classes, state classes, feature flags) is the enum-like stub.
+    def _platform_module(name: str, entity_cls_name: str) -> None:
+        mod = types.ModuleType(f"homeassistant.components.{name}")
+        setattr(mod, entity_cls_name, type(entity_cls_name, (), {}))
+        mod.__getattr__ = _module_getattr(_AnyEnum)  # type: ignore[attr-defined]
+        sys.modules[mod.__name__] = mod
+        setattr(components, name, mod)
+
+    _platform_module("sensor", "SensorEntity")
+    _platform_module("binary_sensor", "BinarySensorEntity")
+    _platform_module("cover", "CoverEntity")
+    _platform_module("switch", "SwitchEntity")
 
 
 def _install_voluptuous_stub() -> None:

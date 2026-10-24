@@ -12,7 +12,8 @@ from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.entity import DeviceInfo
 
-from .const import DOMAIN, MANUFACTURER
+from .const import DOMAIN
+from .device_info import sub_device_info
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -214,18 +215,14 @@ class LifeSmartRemote(remote.RemoteEntity):
 
     @property
     def device_info(self) -> DeviceInfo:
-        info = DeviceInfo(
-            identifiers={(DOMAIN, self._device["me"])},
-            name=self._device_name,
-            manufacturer=MANUFACTURER,
-            model=self._device.get("devtype"),
-            sw_version=self._device.get("epver"),
+        """Return device info.
+
+        R19: built in one go by device_info.py — DeviceInfo is a dataclass
+        from HA 2026.11, so no item assignment. via_device_id (D22) there.
+        """
+        return sub_device_info(
+            self._device, self._hub_device_id, name=self._device_name
         )
-        # D22: link under the hub device. `via_device_id` (not the deprecated
-        # `via_device` tuple) — see __init__.py rationale.
-        if self._hub_device_id:
-            info["via_device_id"] = self._hub_device_id
-        return info
 
     @property
     def extra_state_attributes(self) -> Dict[str, Any]:

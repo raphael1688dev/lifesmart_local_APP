@@ -4,10 +4,11 @@ import logging
 from typing import Optional
 from homeassistant.components.switch import SwitchEntity
 from homeassistant.config_entries import ConfigEntry
-from homeassistant.core import HomeAssistant
+from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.entity import DeviceInfo
-from .const import DOMAIN, CMD_GET, CMD_SET, MANUFACTURER
+from .const import DOMAIN, CMD_GET, CMD_SET
+from .device_info import sub_device_info
 from . import generate_entity_id
 
 _LOGGER = logging.getLogger(__name__)
@@ -115,6 +116,19 @@ class LifeSmartSwitch(SwitchEntity):
             self._send_task.cancel()
             self._send_task = None
 
+    @callback
+    def async_entity_id_changed(self, old_entity_id: str) -> None:
+        """Opt in to in-place entity_id renames (HA 2026.11+, R19).
+
+        Nothing here is keyed on entity_id — the push listener keys on
+        (me, idx) — so there is nothing to re-key. Without this method HA
+        keeps removing and re-adding the
+        entity on rename (compat path, removed in 2027.11) because this class
+        defines async_added_to_hass / async_will_remove_from_hass.
+        Never called on HA <= 2026.10.
+        """
+        super().async_entity_id_changed(old_entity_id)
+
     async def _async_update_state(self, *_):
         """Fetch state from device."""
         try:
@@ -166,19 +180,14 @@ class LifeSmartSwitch(SwitchEntity):
 
     @property
     def device_info(self) -> DeviceInfo:
-        """Return device info."""
-        info = DeviceInfo(
-            identifiers={(DOMAIN, self._device['me'])},
-            name=self._device.get('name', 'LifeSmart Switch'),
-            manufacturer=MANUFACTURER,
-            model=self._device.get('devtype'),
-            sw_version=self._device.get('epver'),
+        """Return device info.
+
+        R19: built in one go by device_info.py — DeviceInfo is a dataclass
+        from HA 2026.11, so no item assignment. via_device_id (D22) there.
+        """
+        return sub_device_info(
+            self._device, self._hub_device_id, default_name="LifeSmart Switch"
         )
-        # D22: link under the hub device. `via_device_id` (not the deprecated
-        # `via_device` tuple) — see __init__.py rationale.
-        if self._hub_device_id:
-            info["via_device_id"] = self._hub_device_id
-        return info
 
     async def async_turn_on(self, **kwargs):
         """Turn the switch on."""

@@ -15,13 +15,13 @@ from homeassistant.components.binary_sensor import (
 )
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import EntityCategory
-from homeassistant.core import HomeAssistant
-from homeassistant.helpers.entity import DeviceInfo
+from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.event import async_track_time_interval
 
 from . import generate_entity_id
-from .const import CMD_GET, DOMAIN, MANUFACTURER
+from .const import CMD_GET, DOMAIN
+from .device_info import sub_device_info
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -120,17 +120,10 @@ class LifeSmartConnectivitySensor(BinarySensorEntity):
                 f"binary_sensor.{generate_entity_id(devtype, hub_id, me, 'connectivity')}"
             )
 
-            self._attr_device_info = DeviceInfo(
-                identifiers={(DOMAIN, me)},
-                name=device.get('name', 'LifeSmart Device'),
-                manufacturer=MANUFACTURER,
-                model=devtype or 'Unknown',
-                sw_version=device.get('epver', 'Unknown'),
-            )
-            # D22: link under the hub device. `via_device_id` (not the
-            # deprecated `via_device` tuple) — see __init__.py rationale.
-            if hub_device_id:
-                self._attr_device_info["via_device_id"] = hub_device_id
+            # R19: built in one go by device_info.py — DeviceInfo is a
+            # dataclass from HA 2026.11, so no item assignment. via_device_id
+            # (D22) handled there.
+            self._attr_device_info = sub_device_info(device, hub_device_id)
 
             stat = device.get("stat")
             self._attr_is_on = (stat == 1) if isinstance(stat, (int, float)) else None
@@ -158,6 +151,19 @@ class LifeSmartConnectivitySensor(BinarySensorEntity):
         if self._unsub_report:
             self._unsub_report()
             self._unsub_report = None
+
+    @callback
+    def async_entity_id_changed(self, old_entity_id: str) -> None:
+        """Opt in to in-place entity_id renames (HA 2026.11+, R19).
+
+        Nothing here is keyed on entity_id — the push listener keys on
+        (me, "stat") and the fallback timer on the callable — so there is
+        nothing to re-key. Without this method HA keeps removing and re-adding the
+        entity on rename (compat path, removed in 2027.11) because this class
+        defines async_added_to_hass / async_will_remove_from_hass.
+        Never called on HA <= 2026.10.
+        """
+        super().async_entity_id_changed(old_entity_id)
 
     def _handle_stat_value(self, val: Any) -> None:
         if not isinstance(val, (int, float)):

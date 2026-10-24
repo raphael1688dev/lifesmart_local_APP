@@ -1,6 +1,5 @@
 """Platform for LifeSmart sensor integration."""
 import logging
-from datetime import timedelta
 from typing import Any, Callable, Dict, Optional, List
 import asyncio
 from homeassistant.components.sensor import (
@@ -9,17 +8,17 @@ from homeassistant.components.sensor import (
     SensorStateClass,
 )
 from homeassistant.config_entries import ConfigEntry
-from homeassistant.core import HomeAssistant
+from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.entity import DeviceInfo, EntityCategory
-from homeassistant.helpers.event import async_track_time_interval
 from homeassistant.const import (
     PERCENTAGE,
     SIGNAL_STRENGTH_DECIBELS_MILLIWATT,
     UnitOfTemperature,
 )
-from .const import CMD_GET, DOMAIN, HUB_MODEL_NAMES, MANUFACTURER
+from .const import CMD_GET, DOMAIN, HUB_MODEL_NAMES
 from .coordinator import LifeSmartCoordinator
+from .device_info import hub_device_info, sub_device_info
 from . import generate_entity_id
 _LOGGER = logging.getLogger(__name__)
 
@@ -169,17 +168,12 @@ class LifeSmartBaseSensor(SensorEntity):
         self._unsub_coordinator = None
 
         try:
-            self._attr_device_info = DeviceInfo(
-                identifiers={(DOMAIN, device['me'])},
-                name=device.get('name', 'LifeSmart Sensor'),
-                manufacturer=MANUFACTURER,
-                model=device.get('devtype', 'Unknown'),
-                sw_version=device.get('epver', 'Unknown')
+            # R19: built in one go by device_info.py — DeviceInfo is a
+            # dataclass from HA 2026.11, so no item assignment. via_device_id
+            # (D22) and sw_version handling live there.
+            self._attr_device_info = sub_device_info(
+                device, hub_device_id, default_name="LifeSmart Sensor"
             )
-            # D22: link under the hub device. `via_device_id` (not the
-            # deprecated `via_device` tuple) — see __init__.py rationale.
-            if hub_device_id:
-                self._attr_device_info["via_device_id"] = hub_device_id
         except KeyError as e:
             _LOGGER.error("Missing required device info field: %s", e)
             raise
@@ -207,6 +201,19 @@ class LifeSmartBaseSensor(SensorEntity):
         if self._unsub_report:
             self._unsub_report()
             self._unsub_report = None
+
+    @callback
+    def async_entity_id_changed(self, old_entity_id: str) -> None:
+        """Opt in to in-place entity_id renames (HA 2026.11+, R19).
+
+        Nothing here is keyed on entity_id — push listeners key on (me, idx)
+        and the coordinator listener on the object — so there is nothing to
+        re-key. Without this method HA keeps removing and re-adding the
+        entity on rename (compat path, removed in 2027.11) because this class
+        defines async_added_to_hass / async_will_remove_from_hass.
+        Never called on HA <= 2026.10.
+        """
+        super().async_entity_id_changed(old_entity_id)
 
     async def _async_update(self, *_: Any) -> None:
         """Abstract method to be implemented by child classes."""
@@ -493,16 +500,7 @@ class LifeSmartHubInfoSensor(SensorEntity):
         else:
             self._attr_native_value = raw
 
-        hub_identifier = f"hub_{host}"
-        mgatype = hub_info.get("mgatype")
-        self._attr_device_info = DeviceInfo(
-            identifiers={(DOMAIN, hub_identifier)},
-            name=config_entry_title,
-            manufacturer=MANUFACTURER,
-            model=HUB_MODEL_NAMES.get(mgatype, mgatype) if isinstance(mgatype, str) else "LifeSmart Hub",
-        )
-        # R17: omit sw_version when unknown — None would wipe the stored value.
-        # R18: str() — HA rejects non-str sw_version from 2026.12.0.
-        _ver = hub_info.get("ver")
-        if _ver is not None:
-            self._attr_device_info["sw_version"] = str(_ver)
+        # R19: same kwargs as __init__.py's registry call and button.py, built
+        # by device_info.py (R17 omit-unknown sw_version and R18 str() live
+        # there) — no item assignment, DeviceInfo is a dataclass from 2026.11.
+        self._attr_device_info = hub_device_info(host, config_entry_title, hub_info)

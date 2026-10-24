@@ -4,10 +4,10 @@ import logging
 from typing import Optional, Any
 from homeassistant.components.cover import CoverEntity, CoverDeviceClass, CoverEntityFeature
 from homeassistant.config_entries import ConfigEntry
-from homeassistant.core import HomeAssistant
+from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
-from homeassistant.helpers.entity import DeviceInfo
-from .const import DOMAIN, CMD_SET, CMD_GET, MANUFACTURER
+from .const import DOMAIN, CMD_SET, CMD_GET
+from .device_info import sub_device_info
 from . import generate_entity_id
 
 _LOGGER = logging.getLogger(__name__)
@@ -85,17 +85,11 @@ class LifeSmartCover(CoverEntity):
 
         _LOGGER.debug("Initializing cover: %s (ID: %s)", device_name, self._attr_unique_id)
 
-        self._attr_device_info = DeviceInfo(
-            identifiers={(DOMAIN, device['me'])},
-            name=device_name,
-            manufacturer=MANUFACTURER,
-            model=device.get('devtype', 'SL_P'),
-            sw_version=device.get('epver', 'Unknown')
+        # R19: built in one go by device_info.py — DeviceInfo is a dataclass
+        # from HA 2026.11, so no item assignment. via_device_id (D22) there.
+        self._attr_device_info = sub_device_info(
+            device, hub_device_id, name=device_name, default_model="SL_P"
         )
-        # D22: link under the hub device. `via_device_id` (not the deprecated
-        # `via_device` tuple) — see __init__.py rationale.
-        if hub_device_id:
-            self._attr_device_info["via_device_id"] = hub_device_id
 
     async def async_added_to_hass(self):
         """實體加入 HA 時，註冊 UDP 推播監聽並獲取初始狀態"""
@@ -108,6 +102,19 @@ class LifeSmartCover(CoverEntity):
         if self._unsub_report:
             self._unsub_report()
             self._unsub_report = None
+
+    @callback
+    def async_entity_id_changed(self, old_entity_id: str) -> None:
+        """Opt in to in-place entity_id renames (HA 2026.11+, R19).
+
+        Nothing here is keyed on entity_id — the push listener keys on
+        (me, idx) — so there is nothing to re-key. Without this method HA
+        keeps removing and re-adding the
+        entity on rename (compat path, removed in 2027.11) because this class
+        defines async_added_to_hass / async_will_remove_from_hass.
+        Never called on HA <= 2026.10.
+        """
+        super().async_entity_id_changed(old_entity_id)
 
     async def _async_update_state(self, *_):
         """獲取窗簾初始狀態"""

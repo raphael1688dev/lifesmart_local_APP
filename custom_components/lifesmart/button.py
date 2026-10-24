@@ -12,10 +12,10 @@ from homeassistant.components.button import ButtonDeviceClass, ButtonEntity
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import EntityCategory
 from homeassistant.core import HomeAssistant
-from homeassistant.helpers.entity import DeviceInfo
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
-from .const import DOMAIN, HUB_MODEL_NAMES, MANUFACTURER
+from .const import DOMAIN
+from .device_info import hub_device_info
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -66,19 +66,10 @@ class LifeSmartHubRebootButton(ButtonEntity):
         # Hand-written entity_id per CLAUDE.md "Hub-level entity 組織慣例".
         self.entity_id = "button.lifesmart_hub_reboot"
 
-        hub_identifier = f"hub_{host}"
-        mgatype = hub_info.get("mgatype")
-        self._attr_device_info = DeviceInfo(
-            identifiers={(DOMAIN, hub_identifier)},
-            name=title,
-            manufacturer=MANUFACTURER,
-            model=HUB_MODEL_NAMES.get(mgatype, mgatype) if isinstance(mgatype, str) else "LifeSmart Hub",
-        )
-        # R17: omit sw_version when unknown — None would wipe the stored value.
-        # R18: str() — HA rejects non-str sw_version from 2026.12.0.
-        _ver = hub_info.get("ver")
-        if _ver is not None:
-            self._attr_device_info["sw_version"] = str(_ver)
+        # R19: same kwargs as __init__.py's registry call and sensor.py, built
+        # by device_info.py (R17 omit-unknown sw_version and R18 str() live
+        # there) — no item assignment, DeviceInfo is a dataclass from 2026.11.
+        self._attr_device_info = hub_device_info(host, title, hub_info)
 
     async def async_press(self) -> None:
         """Send cfg:reboot. Hub will ack then restart immediately."""
