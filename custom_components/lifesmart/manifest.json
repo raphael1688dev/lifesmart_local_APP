@@ -1,6 +1,7 @@
 {
     "domain": "lifesmart",
     "name": "Local LifeSmart",
+    "categories": ["hubs_protocols.smart_home_hubs"],
     "codeowners": ["@raphael1688dev"],
     "config_flow": true,
     "dependencies": [],
@@ -8,5 +9,5 @@
     "iot_class": "local_push",
     "issue_tracker": "https://github.com/raphael1688dev/lifesmart_local_APP/issues",
     "requirements": [],
-    "version": "20261024r1"
+    "version": "20261031r0"
 }
