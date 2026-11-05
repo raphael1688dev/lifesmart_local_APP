@@ -68,8 +68,14 @@ def _get_local_ip_for_target(target_ip: str) -> str:
     finally:
         sock.close()
 
-async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
-    """Set up LifeSmart Local from a config entry."""
+async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> None:
+    """Set up LifeSmart Local from a config entry.
+
+    R23 (2026-11-05, minimum HA 2026.11): the config entry functions return
+    None and fail by raising (dev blog 2026-10-23). Repair issues carry
+    `config_entry_id`, so HA deletes them when the entry is removed and hides
+    them while it is disabled (dev blog 2026-10-28).
+    """
     api = LifeSmartAPI(
         host=entry.data["host"],
         model=entry.data.get("model", "OD_ALI_TECH"),
@@ -136,6 +142,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             _LOGGER.warning("cfg:getver returned non-zero or unexpected shape: %s", ver_resp)
             ir.async_create_issue(
                 hass, DOMAIN, issue_id_version,
+                config_entry_id=entry.entry_id,
                 is_fixable=False,
                 severity=ir.IssueSeverity.WARNING,
                 translation_key="hub_version_unknown",
@@ -144,6 +151,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         _LOGGER.warning("Failed to query hub version (cfg:getver): %s", err)
         ir.async_create_issue(
             hass, DOMAIN, issue_id_version,
+            config_entry_id=entry.entry_id,
             is_fixable=False,
             severity=ir.IssueSeverity.WARNING,
             translation_key="hub_version_unknown",
@@ -226,6 +234,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             if minutes is not None:
                 ir.async_create_issue(
                     hass, DOMAIN, issue_id_unreachable,
+                    config_entry_id=entry.entry_id,
                     is_fixable=False,
                     severity=ir.IssueSeverity.WARNING,
                     translation_key="hub_unreachable",
@@ -246,9 +255,8 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     domain_data["entries"][entry.entry_id]["unsub_notify"] = unsub_notify
 
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
-    return True
 
-async def async_migrate_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
+async def async_migrate_entry(hass: HomeAssistant, entry: ConfigEntry) -> None:
     """Migrate config entry across version bumps.
 
     Version history:
@@ -306,25 +314,26 @@ async def async_migrate_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         hass.config_entries.async_update_entry(entry, version=2)
         _LOGGER.info("Migration to version 2 complete (entry=%s)", entry.entry_id)
 
-    return True
 
+async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> None:
+    """Unload a config entry.
 
-async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
-    """Unload a config entry."""
-    unload_ok = await hass.config_entries.async_unload_platforms(entry, PLATFORMS)
-    if unload_ok:
-        # R19: the heartbeat stops with the entry, so its issue would go stale.
-        ir.async_delete_issue(hass, DOMAIN, _hub_unreachable_issue_id(entry.entry_id))
-        domain_data = hass.data[DOMAIN]
-        entry_data = domain_data["entries"].pop(entry.entry_id, None)
-        if entry_data and entry_data.get("unsub_notify"):
-            entry_data["unsub_notify"]()
-        api: Optional[LifeSmartAPI] = entry_data["api"] if entry_data else None
-        if api is not None:
-            await api.async_stop()
-        if not domain_data["entries"]:
-            hass.data.pop(DOMAIN)
-    return unload_ok
+    R23: raises (translated by HA) when a platform fails to unload. The
+    `hub_unreachable` issue is no longer deleted here: deleting on unload
+    revives an issue the user ignored as soon as a reload re-creates it
+    (dev blog 2026-10-28). It is linked to the entry instead, and setup
+    deletes it once the hub answers.
+    """
+    await hass.config_entries.async_unload_platforms_or_raise(entry, PLATFORMS)
+    domain_data = hass.data[DOMAIN]
+    entry_data = domain_data["entries"].pop(entry.entry_id, None)
+    if entry_data and entry_data.get("unsub_notify"):
+        entry_data["unsub_notify"]()
+    api: Optional[LifeSmartAPI] = entry_data["api"] if entry_data else None
+    if api is not None:
+        await api.async_stop()
+    if not domain_data["entries"]:
+        hass.data.pop(DOMAIN)
 
 def _async_register_services(hass: HomeAssistant) -> None:
     domain_data = hass.data.setdefault(DOMAIN, {"entries": {}, "_services_registered": False})
@@ -446,9 +455,9 @@ def _migrate_entity_ids(hass: HomeAssistant, entry: ConfigEntry) -> None:
     them with a warning; 2027.2 will reject them entirely.
 
     Idempotent: skips entity_ids that are already clean, and skips ids not
-    owned by this config entry. HA's registry rename hook rewires
-    automations/scripts to the new entity_id automatically; Lovelace card
-    references are user-authored config and are NOT rewritten.
+    owned by this config entry. HA does NOT rewrite automation, script or
+    dashboard references to the renamed entity_id (R19, checked against
+    2026.10.3 and dev) — release notes must tell users to update them.
     """
     ent_reg = er.async_get(hass)
     renames = 0

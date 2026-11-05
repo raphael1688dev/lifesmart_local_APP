@@ -6,7 +6,7 @@
                 "description": "Set up your LifeSmart Hub integration",
                 "data": {
                     "host": "IP Address",
-                    "model": "Hub Model",
+                    "model": "OpenDev Model",
                     "token": "Token"
                 }
             },
@@ -15,14 +15,14 @@
                 "description": "Update your LifeSmart Hub connection settings",
                 "data": {
                     "host": "IP Address",
-                    "model": "Hub Model",
+                    "model": "OpenDev Model",
                     "token": "Token"
                 }
             }
         },
         "error": {
             "invalid_host": "Invalid IP address or hostname",
-            "invalid_model": "Invalid hub model",
+            "invalid_model": "Invalid OpenDev model",
             "invalid_token": "Invalid token format",
             "cannot_connect": "Failed to connect to the hub",
             "clock_skew": "Hub rejected the request (code 101): clock difference too large. Auto-correction failed — sync your HA system clock with NTP.",

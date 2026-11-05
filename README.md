@@ -13,7 +13,7 @@ Control LifeSmart devices through your LifeSmart hub over the local network. The
 
 ## Requirements
 
-- Home Assistant **2026.5.0** or newer.
+- Home Assistant **2026.11.0** or newer.
 - A LifeSmart hub (Smart Station, NatureMini family, or DEFED) on the same LAN as Home Assistant.
 - The hub's **local interface (OpenDev) enabled**, with the **model** and **token** LifeSmart assigned to you. See [Configuration](#configuration).
 - UDP traffic allowed between Home Assistant and the hub. The hub listens on port 12348.
@@ -41,7 +41,7 @@ The setup form asks for three values.
 | Field | What to enter |
 |---|---|
 | IP Address | The hub's LAN address. A hostname also works. |
-| Hub Model | The OpenDev **model** string LifeSmart assigned to you, for example `OD_XXX_XXX`. This is not the model printed on the hub. The form pre-fills `OD_ALI_TECH`; replace it if your assigned model is different. |
+| OpenDev Model | The OpenDev **model** string LifeSmart assigned to you, for example `OD_XXX_XXX`. This is not the model printed on the hub. The form pre-fills `OD_ALI_TECH`; replace it if your assigned model is different. |
 | Token | The OpenDev **token** that belongs to that model. The form accepts 16–64 letters and digits. |
 
 The model and token are issued by LifeSmart as a pair and must be used together (Local Interfaces spec §3.2). Before the hub answers, the same pair has to be entered in the LifeSmart app: **Smart → + → Smart Template Management → Add Template → Common Templates → OpenDev**, then fill in name, model, token and encrypt key (spec §1.1).
