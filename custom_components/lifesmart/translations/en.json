@@ -42,5 +42,71 @@
             "title": "Cannot read hub firmware version",
             "description": "`cfg:getver` did not return the expected payload. The hub firmware / OS / model sensors will be blank, but other functions still work."
         }
+    },
+    "services": {
+        "set_hub_timezone": {
+            "name": "Set hub time zone",
+            "description": "Set the hub's time zone and daylight saving time (cfg:timezone).",
+            "fields": {
+                "config_entry_id": {
+                    "name": "Hub",
+                    "description": "The LifeSmart hub to configure."
+                },
+                "timezone": {
+                    "name": "Time zone",
+                    "description": "UTC offset in whole hours, -12 to 12. East is positive."
+                },
+                "daylight_saving": {
+                    "name": "Daylight saving time",
+                    "description": "Whether the hub applies daylight saving time."
+                }
+            }
+        },
+        "rename_device": {
+            "name": "Rename device on the hub",
+            "description": "Set the name the hub stores for itself or one of its devices (cfg:devname). The integration reloads afterwards.",
+            "fields": {
+                "config_entry_id": {
+                    "name": "Hub",
+                    "description": "The LifeSmart hub the device belongs to."
+                },
+                "device_id": {
+                    "name": "Device",
+                    "description": "Leave empty, or pick the hub, to rename the hub itself."
+                },
+                "name": {
+                    "name": "Name",
+                    "description": "The new name."
+                }
+            }
+        },
+        "upgrade_hub_firmware": {
+            "name": "Upgrade hub firmware",
+            "description": "Download the latest official firmware from LifeSmart's server to the hub (cfg:upgrade). It takes effect after the hub restarts.",
+            "fields": {
+                "config_entry_id": {
+                    "name": "Hub",
+                    "description": "The LifeSmart hub to upgrade."
+                },
+                "reboot": {
+                    "name": "Restart when downloaded",
+                    "description": "Restart the hub as soon as the download finishes."
+                }
+            }
+        },
+        "factory_reset_hub": {
+            "name": "Factory reset hub",
+            "description": "Restore the hub's factory settings and restart it (cfg:reset). This cannot be undone.",
+            "fields": {
+                "config_entry_id": {
+                    "name": "Hub",
+                    "description": "The LifeSmart hub to reset."
+                },
+                "confirm": {
+                    "name": "Confirm",
+                    "description": "Must be on, or the action is refused."
+                }
+            }
+        }
     }
 }

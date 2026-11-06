@@ -6,7 +6,6 @@ device-level `stat` common attribute (Local Interfaces §6.1 — `stat`: 1=onlin
 """
 import asyncio
 import logging
-from datetime import timedelta
 from typing import Any, Callable, Dict, List, Optional
 
 from homeassistant.components.binary_sensor import (
@@ -17,17 +16,13 @@ from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import EntityCategory
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
-from homeassistant.helpers.event import async_track_time_interval
 
 from . import generate_entity_id
-from .const import CMD_GET, DOMAIN
+from .const import DOMAIN
+from .coordinator import LifeSmartCoordinator
 from .device_info import sub_device_info
 
 _LOGGER = logging.getLogger(__name__)
-
-# stat doesn't change as often as data channels; 15 min fallback poll is
-# adequate since the primary signal is the NOTIFY push event.
-UPDATE_INTERVAL_SECONDS = 900
 
 
 async def async_setup_entry(
@@ -40,6 +35,7 @@ async def async_setup_entry(
 
     entry_data = hass.data[DOMAIN]["entries"][config_entry.entry_id]
     api = entry_data["api"]
+    coordinator: Optional[LifeSmartCoordinator] = entry_data.get("coordinator")
     # D22: hub device registry ID — sub-devices hang off it via via_device_id.
     hub_device_id: Optional[str] = entry_data.get("hub_device_id")
     devices = entry_data.get("devices") or []
@@ -67,6 +63,7 @@ async def async_setup_entry(
                     binary_sensors.append(
                         LifeSmartConnectivitySensor(
                             api=api, device=device, hub_device_id=hub_device_id,
+                            coordinator=coordinator,
                         )
                     )
             except KeyError as e:
@@ -84,7 +81,9 @@ class LifeSmartConnectivitySensor(BinarySensorEntity):
     1. Push via api.register_state_listener(me, "stat", ...) — driven by
        LI §4 NOTIFY events; api.py extracts scalar `stat` from `chg` items
        and dispatches as virtual idx "stat".
-    2. Fallback periodic `ep` GET every 15 min — defensive in case push is lost.
+    2. Fallback: the shared LifeSmartCoordinator's 15 min `eps` snapshot,
+       in case a push is lost. D15 (R25): it replaced a per-entity `ep` GET
+       timer, so N connectivity sensors no longer cost N requests a cycle.
     """
 
     _attr_should_poll = False
@@ -95,15 +94,20 @@ class LifeSmartConnectivitySensor(BinarySensorEntity):
     _api: Any
     _device: Dict[str, Any]
     _unsub_report: Optional[Callable[[], None]]
-    _remove_tracker: Optional[Callable[[], None]]
+    _unsub_coordinator: Optional[Callable[[], None]]
 
     def __init__(
-        self, api: Any, device: Dict[str, Any], hub_device_id: Optional[str] = None,
+        self,
+        api: Any,
+        device: Dict[str, Any],
+        hub_device_id: Optional[str] = None,
+        coordinator: Optional[LifeSmartCoordinator] = None,
     ) -> None:
         self._api = api
         self._device = device
+        self._coordinator = coordinator
         self._unsub_report = None
-        self._remove_tracker = None
+        self._unsub_coordinator = None
 
         try:
             me = device['me']
@@ -132,22 +136,20 @@ class LifeSmartConnectivitySensor(BinarySensorEntity):
             raise
 
     async def async_added_to_hass(self) -> None:
-        """Register push listener and fallback poll."""
+        """Register the push listener and the coordinator fallback."""
         # Push: api dispatches stat changes via virtual idx "stat".
         self._unsub_report = self._api.register_state_listener(
             self._device["me"], "stat", self._handle_stat_value
         )
-        await self._async_update()
-        self._remove_tracker = async_track_time_interval(
-            self.hass,
-            self._async_update,
-            timedelta(seconds=UPDATE_INTERVAL_SECONDS),
-        )
+        if self._coordinator is not None:
+            self._unsub_coordinator = self._coordinator.async_add_listener(
+                self._handle_coordinator_update
+            )
 
     async def async_will_remove_from_hass(self) -> None:
-        if self._remove_tracker:
-            self._remove_tracker()
-            self._remove_tracker = None
+        if self._unsub_coordinator:
+            self._unsub_coordinator()
+            self._unsub_coordinator = None
         if self._unsub_report:
             self._unsub_report()
             self._unsub_report = None
@@ -157,7 +159,7 @@ class LifeSmartConnectivitySensor(BinarySensorEntity):
         """Opt in to in-place entity_id renames (HA 2026.11+, R19).
 
         Nothing here is keyed on entity_id — the push listener keys on
-        (me, "stat") and the fallback timer on the callable — so there is
+        (me, "stat") and the coordinator listener on the method — so there is
         nothing to re-key. Without this method HA keeps removing and re-adding the
         entity on rename (compat path, removed in 2027.11) because this class
         defines async_added_to_hass / async_will_remove_from_hass.
@@ -175,15 +177,14 @@ class LifeSmartConnectivitySensor(BinarySensorEntity):
     async def _async_write_state(self) -> None:
         self.async_write_ha_state()
 
-    async def _async_update(self, *_: Any) -> None:
-        """Fallback poll via ep GET — refreshes stat at device level."""
-        args: Dict[str, Any] = {"me": self._device["me"]}
-        try:
-            response: Dict[str, Any] = await self._api.send_command("ep", args, CMD_GET)
-            if response.get("code") == 0 and isinstance(response.get("msg"), dict):
-                stat = response["msg"].get("stat")
-                if isinstance(stat, (int, float)):
-                    self._attr_is_on = (stat == 1)
-                    self.async_write_ha_state()
-        except (asyncio.TimeoutError, OSError, KeyError, ValueError, TypeError) as e:
-            _LOGGER.error("Unexpected error updating connectivity sensor: %s", e)
+    @callback
+    def _handle_coordinator_update(self) -> None:
+        """D15: take `stat` from the coordinator's `eps` snapshot."""
+        if self._coordinator is None or self._coordinator.data is None:
+            return
+        device = self._coordinator.data.get(self._device["me"])
+        stat = device.get("stat") if isinstance(device, dict) else None
+        if not isinstance(stat, (int, float)):
+            return
+        self._attr_is_on = (stat == 1)
+        self.async_write_ha_state()

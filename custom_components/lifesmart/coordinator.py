@@ -18,7 +18,7 @@ from __future__ import annotations
 import asyncio
 import logging
 from datetime import timedelta
-from typing import Any, Dict
+from typing import Any, Dict, Optional
 
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
@@ -73,3 +73,85 @@ class LifeSmartCoordinator(DataUpdateCoordinator[Dict[str, Dict[str, Any]]]):
             if isinstance(me, str):
                 out[me] = d
         return out
+
+
+# D4 (R25): the hub's own identity (cfg:getver) and time zone (cfg:timezone)
+# were read once at setup, so a firmware upgrade only showed after a reload.
+# Neither changes often; once a day is plenty.
+HUB_INFO_UPDATE_INTERVAL = timedelta(hours=24)
+
+
+def parse_hub_version(response: Any) -> Optional[Dict[str, Any]]:
+    """`ver` / `osver` / `mgatype` from a cfg:getver reply (LI §3.3.10), or
+    None when the hub answered with an error or an unexpected shape."""
+    if (
+        isinstance(response, dict)
+        and response.get("code") == 0
+        and isinstance(response.get("msg"), dict)
+    ):
+        msg = response["msg"]
+        return {"ver": msg.get("ver"), "osver": msg.get("osver"), "mgatype": msg.get("mgatype")}
+    return None
+
+
+def parse_timezone(response: Any) -> Optional[Dict[str, Any]]:
+    """`timezone` ([-12, 12]) and `summer` (DST) from a cfg:timezone reply
+    (LI §3.3.10, OD §2.3.1), or None. `summer` is None when not a bool."""
+    if not (
+        isinstance(response, dict)
+        and response.get("code") == 0
+        and isinstance(response.get("msg"), dict)
+    ):
+        return None
+    tz = response["msg"].get("timezone")
+    summer = response["msg"].get("summer")
+    if isinstance(tz, bool) or not isinstance(tz, int) or not -12 <= tz <= 12:
+        return None
+    return {"timezone": tz, "summer": summer if isinstance(summer, bool) else None}
+
+
+class LifeSmartHubCoordinator(DataUpdateCoordinator[Dict[str, Any]]):
+    """Per-hub cfg:getver + cfg:timezone, refreshed daily.
+
+    Data: `ver`, `osver`, `mgatype`, `timezone`, `summer` and `version_ok`
+    (False when the last cfg:getver failed — __init__.py raises the
+    `hub_version_unknown` repair issue from it). A failed read keeps the
+    previous values instead of raising UpdateFailed: the hub sensors would
+    rather show the last known firmware than go blank.
+    """
+
+    def __init__(self, hass: HomeAssistant, api: LifeSmartAPI, host: str) -> None:
+        super().__init__(
+            hass,
+            _LOGGER,
+            name=f"lifesmart_hub_{host}",
+            update_interval=HUB_INFO_UPDATE_INTERVAL,
+        )
+        self._api = api
+
+    async def async_fetch(self) -> Dict[str, Any]:
+        """Read cfg:getver and cfg:timezone; merge into the previous data."""
+        info: Dict[str, Any] = dict(self.data or {})
+        version: Optional[Dict[str, Any]] = None
+        try:
+            reply = await self._api.get_hub_version()
+            version = parse_hub_version(reply)
+            if version is None:
+                _LOGGER.warning("cfg:getver returned non-zero or unexpected shape: %s", reply)
+        except (asyncio.TimeoutError, OSError, KeyError, ValueError) as err:
+            _LOGGER.warning("Failed to query hub version (cfg:getver): %s", err)
+        if version is not None:
+            info.update(version)
+        info["version_ok"] = version is not None
+
+        try:
+            timezone = parse_timezone(await self._api.get_hub_timezone())
+        except (asyncio.TimeoutError, OSError, KeyError, ValueError) as err:
+            _LOGGER.debug("Failed to query hub time zone (cfg:timezone): %s", err)
+            timezone = None
+        if timezone is not None:
+            info.update(timezone)
+        return info
+
+    async def _async_update_data(self) -> Dict[str, Any]:
+        return await self.async_fetch()

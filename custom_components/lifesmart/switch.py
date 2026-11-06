@@ -9,6 +9,7 @@ from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.entity import DeviceInfo
 from .const import DOMAIN, CMD_GET, CMD_SET
 from .device_info import sub_device_info
+from .group_scene import SWITCH_GROUP_CLASSES, LifeSmartGroupScene, group_scenes
 from . import generate_entity_id
 
 _LOGGER = logging.getLogger(__name__)
@@ -28,7 +29,12 @@ SUPPORTED_SWITCH_TYPES = [
     "SL_SW_IF1",
     "SL_SW_IF2",
     "SL_SW_IF3",
-    "SL_SW_RC"
+    "SL_SW_RC",
+    # LI §6.3.5 Multi-control Accessory: L1-L3 take the same type/val
+    # commands as the switches above (D9, R25). Its B1-B3 buttons are events.
+    "SL_MC_ND1",
+    "SL_MC_ND2",
+    "SL_MC_ND3",
 ]
 
 async def async_setup_entry(
@@ -67,7 +73,26 @@ async def async_setup_entry(
                             )
                         )
 
+    # D9 (R25): LI §5.2 `groupsw` scenes turn a group on / off.
+    hub_key = entry_data.get("hub_key") or entry_data.get("host", "")
+    for scene in group_scenes(entry_data, SWITCH_GROUP_CLASSES):
+        switches.append(
+            LifeSmartGroupSwitch(
+                api=api,
+                scene=scene,
+                platform="switch",
+                hub_key=hub_key,
+                hub_info=entry_data.get("hub_info") or {},
+                title=config_entry.title or "LifeSmart Hub",
+            )
+        )
+
     async_add_entities(switches)
+
+
+class LifeSmartGroupSwitch(LifeSmartGroupScene, SwitchEntity):
+    """A `groupsw` scene: a group of switches / bulbs, on or off."""
+
 
 class LifeSmartSwitch(SwitchEntity):
     _attr_should_poll = False

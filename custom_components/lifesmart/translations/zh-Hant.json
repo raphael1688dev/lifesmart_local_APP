@@ -42,5 +42,71 @@
             "title": "無法取得中樞韌體版本",
             "description": "`cfg:getver` 命令未回傳預期內容。中樞韌體版本／系統版本／型號 sensor 會顯示為空白，但其他功能不受影響。"
         }
+    },
+    "services": {
+        "set_hub_timezone": {
+            "name": "設定中樞時區",
+            "description": "設定中樞的時區與日光節約時間（cfg:timezone）。",
+            "fields": {
+                "config_entry_id": {
+                    "name": "中樞",
+                    "description": "要設定的 LifeSmart 中樞。"
+                },
+                "timezone": {
+                    "name": "時區",
+                    "description": "與 UTC 相差的整數小時，-12 到 12，東區為正。"
+                },
+                "daylight_saving": {
+                    "name": "日光節約時間",
+                    "description": "中樞是否套用日光節約時間。"
+                }
+            }
+        },
+        "rename_device": {
+            "name": "在中樞上重新命名裝置",
+            "description": "設定中樞為自己或其下裝置儲存的名稱（cfg:devname）。完成後整合會重新載入。",
+            "fields": {
+                "config_entry_id": {
+                    "name": "中樞",
+                    "description": "裝置所屬的 LifeSmart 中樞。"
+                },
+                "device_id": {
+                    "name": "裝置",
+                    "description": "留空或選擇中樞本身，即重新命名中樞。"
+                },
+                "name": {
+                    "name": "名稱",
+                    "description": "新的名稱。"
+                }
+            }
+        },
+        "upgrade_hub_firmware": {
+            "name": "升級中樞韌體",
+            "description": "從 LifeSmart 伺服器下載最新正式版韌體到中樞（cfg:upgrade）。中樞重新啟動後生效。",
+            "fields": {
+                "config_entry_id": {
+                    "name": "中樞",
+                    "description": "要升級的 LifeSmart 中樞。"
+                },
+                "reboot": {
+                    "name": "下載完成後重新啟動",
+                    "description": "下載完成後立即重新啟動中樞。"
+                }
+            }
+        },
+        "factory_reset_hub": {
+            "name": "中樞恢復原廠設定",
+            "description": "將中樞恢復為原廠設定並重新啟動（cfg:reset）。此動作無法復原。",
+            "fields": {
+                "config_entry_id": {
+                    "name": "中樞",
+                    "description": "要重設的 LifeSmart 中樞。"
+                },
+                "confirm": {
+                    "name": "確認",
+                    "description": "必須開啟，否則拒絕執行。"
+                }
+            }
+        }
     }
 }

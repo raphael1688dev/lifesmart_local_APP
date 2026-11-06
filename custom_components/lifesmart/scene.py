@@ -5,8 +5,11 @@ entity. Triggering hits LI §3.3.6 (obj=doscene SET).
 
 Scope: only `cls in ("scene", "groupirc")` is exposed — both are
 parameter-free triggers (§5.2). Group switch / light scenes (`groupsw`,
-`grouphw`, `grouprgbw`) carry on/off + color state, so they belong on the
-`light` / `switch` platform rather than `scene`. Out of Phase 1 scope.
+`grouphw`, `grouprgbw`) turn a group on or off, so R25 puts them on the
+`switch` / `light` platforms (group_scene.py).
+
+R25: the scene list is read once in __init__.py and shared by the three
+platforms.
 """
 import asyncio
 import logging
@@ -41,40 +44,11 @@ async def async_setup_entry(
     entry_data = hass.data[DOMAIN]["entries"][config_entry.entry_id]
     api = entry_data["api"]
 
-    try:
-        response = await api.get_scene_list()
-    except (asyncio.TimeoutError, OSError, KeyError, ValueError, TypeError) as err:
-        _LOGGER.warning("Failed to fetch scene list: %s", err)
-        return
-
-    if not isinstance(response, dict) or response.get("code") != 0:
-        _LOGGER.debug("Scene list call returned non-zero code: %s", response)
-        return
-
-    raw_list = response.get("msg")
-    if not isinstance(raw_list, list):
-        _LOGGER.debug("Scene list msg is not a list: %s", raw_list)
-        return
-
-    scenes: List[Scene] = []
-    skipped: List[str] = []
-    for item in raw_list:
-        if not isinstance(item, dict):
-            continue
-        scene_id = item.get("id")
-        cls = item.get("cls")
-        if not isinstance(scene_id, str) or not isinstance(cls, str):
-            continue
-        if cls not in TRIGGER_ONLY_CLASSES:
-            skipped.append(f"{scene_id}(cls={cls})")
-            continue
-        scenes.append(LifeSmartScene(api=api, scene=item))
-
-    if skipped:
-        _LOGGER.info(
-            "Skipped %d scenes with parameterised cls (out of Phase 1 scope): %s",
-            len(skipped), skipped,
-        )
+    scenes: List[Scene] = [
+        LifeSmartScene(api=api, scene=item)
+        for item in entry_data.get("scenes") or []
+        if item.get("cls") in TRIGGER_ONLY_CLASSES
+    ]
     _LOGGER.debug("Adding %d LifeSmart scenes", len(scenes))
     async_add_entities(scenes)
 

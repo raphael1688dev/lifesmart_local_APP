@@ -42,5 +42,71 @@
             "title": "无法读取中枢固件版本",
             "description": "`cfg:getver` 未返回预期内容。中枢固件版本／系统版本／型号 sensor 将显示为空，但其他功能不受影响。"
         }
+    },
+    "services": {
+        "set_hub_timezone": {
+            "name": "设置中枢时区",
+            "description": "设置中枢的时区与夏令时（cfg:timezone）。",
+            "fields": {
+                "config_entry_id": {
+                    "name": "中枢",
+                    "description": "要设置的 LifeSmart 中枢。"
+                },
+                "timezone": {
+                    "name": "时区",
+                    "description": "与 UTC 相差的整数小时，-12 到 12，东区为正。"
+                },
+                "daylight_saving": {
+                    "name": "夏令时",
+                    "description": "中枢是否启用夏令时。"
+                }
+            }
+        },
+        "rename_device": {
+            "name": "在中枢上重命名设备",
+            "description": "设置中枢为自身或其下设备保存的名称（cfg:devname）。完成后集成会重新加载。",
+            "fields": {
+                "config_entry_id": {
+                    "name": "中枢",
+                    "description": "设备所属的 LifeSmart 中枢。"
+                },
+                "device_id": {
+                    "name": "设备",
+                    "description": "留空或选择中枢本身，即重命名中枢。"
+                },
+                "name": {
+                    "name": "名称",
+                    "description": "新的名称。"
+                }
+            }
+        },
+        "upgrade_hub_firmware": {
+            "name": "升级中枢固件",
+            "description": "从 LifeSmart 服务器下载最新正式版固件到中枢（cfg:upgrade）。中枢重启后生效。",
+            "fields": {
+                "config_entry_id": {
+                    "name": "中枢",
+                    "description": "要升级的 LifeSmart 中枢。"
+                },
+                "reboot": {
+                    "name": "下载完成后重启",
+                    "description": "下载完成后立即重启中枢。"
+                }
+            }
+        },
+        "factory_reset_hub": {
+            "name": "中枢恢复出厂设置",
+            "description": "将中枢恢复为出厂设置并重启（cfg:reset）。此操作无法撤销。",
+            "fields": {
+                "config_entry_id": {
+                    "name": "中枢",
+                    "description": "要重置的 LifeSmart 中枢。"
+                },
+                "confirm": {
+                    "name": "确认",
+                    "description": "必须开启，否则拒绝执行。"
+                }
+            }
+        }
     }
 }

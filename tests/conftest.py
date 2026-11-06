@@ -84,7 +84,15 @@ def _install_ha_stubs() -> None:
     class _ConfigEntryNotReady(Exception):
         pass
 
+    class _HomeAssistantError(Exception):
+        pass
+
+    class _ServiceValidationError(_HomeAssistantError):
+        pass
+
     exc.ConfigEntryNotReady = _ConfigEntryNotReady
+    exc.HomeAssistantError = _HomeAssistantError
+    exc.ServiceValidationError = _ServiceValidationError
     sys.modules["homeassistant.exceptions"] = exc
 
     # homeassistant.helpers / entity_registry / event / issue_registry /
@@ -104,10 +112,15 @@ def _install_ha_stubs() -> None:
     dev_reg = types.ModuleType("homeassistant.helpers.device_registry")
     dev_reg.async_get = lambda hass: None
     dev_reg.DeviceEntry = _Stub
+    # R25 (D21): __init__.py looks up this entry's hub device.
+    dev_reg.async_entries_for_config_entry = lambda registry, entry_id: (
+        registry.entries_for(entry_id) if registry is not None else []
+    )
     sys.modules["homeassistant.helpers.device_registry"] = dev_reg
 
     event = types.ModuleType("homeassistant.helpers.event")
     event.async_track_time_interval = lambda *a, **kw: (lambda: None)
+    event.async_call_later = lambda *a, **kw: (lambda: None)
     sys.modules["homeassistant.helpers.event"] = event
 
     issue_reg = types.ModuleType("homeassistant.helpers.issue_registry")
@@ -128,9 +141,14 @@ def _install_ha_stubs() -> None:
 
         def __init__(self, *a, **kw) -> None:
             self.data = None
+            self.listeners: list = []  # R25: tests fire these by hand
 
-        def async_add_listener(self, _cb, *a, **kw):
-            return lambda: None
+        def async_add_listener(self, cb, *a, **kw):
+            self.listeners.append(cb)
+            return lambda: self.listeners.remove(cb) if cb in self.listeners else None
+
+        async def async_request_refresh(self) -> None:
+            pass
 
         def async_set_updated_data(self, data) -> None:
             self.data = data
@@ -209,6 +227,37 @@ def _install_ha_stubs() -> None:
     _platform_module("binary_sensor", "BinarySensorEntity")
     _platform_module("cover", "CoverEntity")
     _platform_module("switch", "SwitchEntity")
+    # R25: button (D5 reload), scene, light (D9 group scenes).
+    _platform_module("button", "ButtonEntity")
+    _platform_module("scene", "Scene")
+    _platform_module("light", "LightEntity")
+
+    # R25 (D9): event platform. `_trigger_event` records what was fired so
+    # tests can read it; the real one validates the type the same way.
+    event_mod = types.ModuleType("homeassistant.components.event")
+
+    class _EventEntity:
+        _attr_event_types: list
+
+        def _trigger_event(self, event_type, event_attributes=None) -> None:
+            if event_type not in self._attr_event_types:
+                raise ValueError(f"Invalid event type {event_type}")
+            self.last_event = (event_type, event_attributes)
+
+    class _ButtonEventType:
+        PRESS_START = "press_start"
+        PRESS_END = "press_end"
+        LONG_PRESS_START = "long_press_start"
+        LONG_PRESS_END = "long_press_end"
+        MULTI_PRESS_ONGOING = "multi_press_ongoing"
+        MULTI_PRESS_END = "multi_press_end"
+
+    event_mod.EventEntity = _EventEntity
+    event_mod.ButtonEventType = _ButtonEventType
+    event_mod.EventDeviceClass = _AnyEnum
+    event_mod.ATTR_MULTI_PRESS_COUNT = "multi_press_count"
+    sys.modules[event_mod.__name__] = event_mod
+    components.event = event_mod  # type: ignore[attr-defined]
 
 
 def _install_voluptuous_stub() -> None:
@@ -244,7 +293,12 @@ def _install_voluptuous_stub() -> None:
 
     vol.Schema = _Schema
     vol.Required = _Required
+    vol.Optional = _Required  # R25: service schemas
     vol.Any = _Any
+    vol.All = _Any
+    vol.Coerce = _Any
+    vol.Range = _Any
+    vol.Length = _Any
     vol.Invalid = type("Invalid", (Exception,), {})
     sys.modules["voluptuous"] = vol
 

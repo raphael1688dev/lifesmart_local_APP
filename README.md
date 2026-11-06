@@ -6,7 +6,10 @@ Control LifeSmart devices through your LifeSmart hub over the local network. The
 
 - Local control and real-time state push from the hub (NOTIFY events), with a slow fallback poll.
 - Switches, curtain motors, IR remotes, temperature, battery, signal-strength and connectivity sensors.
-- Hub-level firmware/OS/model sensors, a reboot button, and the hub's scenes.
+- Button events from multi-control accessories and CUBE clickers.
+- Hub-level firmware/OS/model/time-zone sensors, a reboot button, the hub's scenes, and its group scenes as switches and lights.
+- Actions to set the hub's time zone, rename devices on the hub, upgrade the hub firmware, or factory-reset the hub.
+- Devices paired to or removed from the hub show up in Home Assistant without a manual reload.
 - Sub-devices are grouped under the hub device on the device page.
 - UI setup, reconfiguration without removing the integration, diagnostics download, and Repairs notices.
 - Translations: English, 繁體中文, 简体中文.
@@ -54,11 +57,13 @@ The model and token are issued by LifeSmart as a pair and must be used together 
 
 | Platform | Device types | What you get |
 |---|---|---|
-| `switch` | `SL_SW_ND1/2/3` Stellar/Starry/Polar, `SL_SW_NS1/2/3` Moonstone, `SL_SW_IF1/2/3` and `SL_SW_RC` Traditional, `SL_NATURE` Nature Mini | One switch per channel `L1`/`L2`/`L3` |
+| `switch` | `SL_SW_ND1/2/3` Stellar/Starry/Polar, `SL_SW_NS1/2/3` Moonstone, `SL_SW_IF1/2/3` and `SL_SW_RC` Traditional, `SL_NATURE` Nature Mini, `SL_MC_ND1/2/3` multi-control accessory | One switch per channel `L1`/`L2`/`L3` |
+| `event` | `SL_MC_ND1/2/3` (buttons `B1`–`B3`), `SL_SC_BB` CUBE Clicker (button `B`) | Button events: press and release |
+| `event` | `SL_SC_BB_V2` CUBE Clicker, new version (button `BN`) | Button events: single press, double press, press and hold |
 | `cover` | `SL_P` MINS curtain motor controller | Open / close / stop |
 | `remote` | `SL_P_IR` SPOT (mini), 922 RF version | One remote entity per SPOT, carrying every IR remote configured on it |
 | `sensor` | `SL_NATURE` | Temperature from channel `T` (raw value ÷ 10 = °C) |
-| `sensor` | `SL_SW_ND*`, `SL_MC_ND*` (channel `V`); `SL_P` (channel `P8`) | Battery, only when the device actually reports the channel |
+| `sensor` | `SL_SW_ND*`, `SL_MC_ND*`, `SL_SC_BB*` (channel `V`); `SL_P` (channel `P8`) | Battery, only when the device actually reports the channel |
 | `sensor` | Every sub-device that reports `lDbm` | Signal strength in dBm (diagnostic) |
 | `binary_sensor` | Every sub-device that reports `stat` | Connectivity (diagnostic) |
 
@@ -68,9 +73,12 @@ The model and token are issued by LifeSmart as a pair and must be used together 
 
 | Entity | Notes |
 |---|---|
-| `sensor.lifesmart_hub_firmware`, `sensor.lifesmart_hub_os`, `sensor.lifesmart_hub_model` | Read once at startup from `cfg:getver`. Reload the integration after a hub firmware upgrade. |
-| `button.lifesmart_hub_reboot` | Restarts the hub. Home Assistant asks for confirmation first. |
+| `sensor.lifesmart_hub_firmware`, `sensor.lifesmart_hub_os`, `sensor.lifesmart_hub_model` | Read from `cfg:getver` at startup and once a day. |
+| `sensor.lifesmart_hub_timezone` | The hub's time zone as `UTC+8`, with a `daylight_saving` attribute. Read at startup and once a day. |
+| `button.lifesmart_hub_reboot` | Restarts the hub. Home Assistant asks for confirmation first. The integration reloads two minutes later. |
 | `scene.lifesmart_<name>_<id>` | One scene per hub scene of type `scene` or `groupirc`. Activating it runs the scene on the hub. |
+| `switch.lifesmart_<name>_<id>` | One switch per hub group scene of type `groupsw`. Turns the group on or off. |
+| `light.lifesmart_<name>_<id>` | One light per hub group scene of type `grouphw` or `grouprgbw`. Turns the group on or off. |
 
 ### Entity IDs
 
@@ -92,6 +100,17 @@ data:
 
 The integration also offers `lifesmart.send_keys`, which takes a hub `remote_id` and one key or a list of keys.
 
+## Hub actions
+
+Each action takes the hub's integration entry (`config_entry_id`), so several hubs stay apart.
+
+| Action | What it does |
+|---|---|
+| `lifesmart.set_hub_timezone` | Sets the hub's time zone (`timezone`, whole hours from -12 to 12, east positive) and `daylight_saving`. |
+| `lifesmart.rename_device` | Sets the name the hub stores for one of its devices (`device_id`), or for the hub itself when no device is given. The integration reloads afterwards to show it. |
+| `lifesmart.upgrade_hub_firmware` | Downloads the latest official firmware from LifeSmart's server to the hub. It takes effect after the hub restarts; set `reboot` to restart as soon as the download finishes. |
+| `lifesmart.factory_reset_hub` | Restores the hub's factory settings and restarts it. Requires `confirm: true`. This cannot be undone. |
+
 ## Troubleshooting
 
 - **Failed to connect to the hub.** Check the IP, that Home Assistant and the hub share a LAN segment, that UDP is not blocked, and that the OpenDev template is enabled in the LifeSmart app.
@@ -100,8 +119,8 @@ The integration also offers `lifesmart.send_keys`, which takes a hub `remote_id`
 - **No devices found on the hub.** The hub answered but reported no sub-devices. Check the model/token pair matches the one in the app's OpenDev template.
 - **Integration shows "Retrying setup".** The hub did not answer at startup. Home Assistant retries on its own; check power and network.
 - **Repairs: "LifeSmart hub is unreachable".** The hub has not answered for 5 minutes or more while Home Assistant was running. Check power and network. The notice disappears by itself once the hub answers again.
-- **Repairs: "Cannot read hub firmware version".** The three hub sensors stay empty. Everything else keeps working.
-- **A newly paired device does not appear.** Reload the integration. New devices are only discovered at setup.
+- **Repairs: "Cannot read hub firmware version".** The hub sensors keep the last values read, or stay empty if none were. Everything else keeps working. The integration tries again once a day.
+- **A newly paired device does not appear.** The integration reloads about 10 seconds after the hub reports a paired or removed device. If the device still does not appear, reload the integration from its menu.
 - **Reporting a bug.** Attach the diagnostics file from the integration's menu (**⋮ → Download diagnostics**). Token and signatures are redacted. For logs, add:
 
   ```yaml
@@ -113,8 +132,9 @@ The integration also offers `lifesmart.send_keys`, which takes a hub `remote_id`
 ## Known limitations
 
 - The curtain's position is read from channel `P1`. The spec does not say which channel reports curtain state, so this is not verified on hardware.
-- Hub scenes of type `groupsw`, `grouphw` and `grouprgbw` are not exposed yet.
+- Group scenes (`groupsw`, `grouphw`, `grouprgbw`) are on/off only. The hub does not report their state, so Home Assistant shows the last command it sent. Setting a group's colour is not supported: the spec does not say which parameter carries it.
 - The scene trigger parameters follow the spec's example and have not been tested on every scene type.
+- The spec gives no example of the hub's "device paired" / "device removed" messages. The automatic reload follows the documented field names and has not been tested on hardware.
 - IR remotes are supported only through `SL_P_IR` (SPOT mini).
 
 ## Upgrades that changed entity IDs

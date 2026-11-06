@@ -13,7 +13,7 @@ API_VERSION = 1
 REMARK = "JL"
 
 # Supported Platforms (對應 HA 的實體類別)
-PLATFORMS = ["switch", "sensor", "binary_sensor", "button", "scene", "cover", "remote"]
+PLATFORMS = ["switch", "sensor", "binary_sensor", "button", "scene", "cover", "remote", "event", "light"]
 
 # Hub model friendly names — LI §3.3.10 L1561-1576 (mgatype from cfg:getver).
 # Used to populate DeviceInfo.model on the hub device.

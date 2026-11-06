@@ -17,8 +17,8 @@ from homeassistant.const import (
     UnitOfTemperature,
 )
 from .const import CMD_GET, DOMAIN, HUB_MODEL_NAMES
-from .coordinator import LifeSmartCoordinator
-from .device_info import hub_device_info, sub_device_info
+from .coordinator import LifeSmartCoordinator, LifeSmartHubCoordinator
+from .device_info import hub_device_info, hub_key_slug, sub_device_info
 from . import generate_entity_id
 _LOGGER = logging.getLogger(__name__)
 
@@ -79,12 +79,13 @@ async def async_setup_entry(
                     )
                 elif (
                     isinstance(device.get("devtype"), str)
-                    and device["devtype"].startswith(("SL_SW_ND", "SL_MC_ND"))
+                    and device["devtype"].startswith(("SL_SW_ND", "SL_MC_ND", "SL_SC_BB"))
                     and "data" in device
                     and "V" in device["data"]
                 ):
                     # §6.3.2 Stellar/Starry/Polar Switch (SL_SW_ND*)
                     # §6.3.5 Stellar/Starry/Polar Multi-control Accessory (SL_MC_ND*)
+                    # §6.3.6 / §6.3.7 CUBE Clicker (SL_SC_BB / SL_SC_BB_V2, R25)
                     # V idx = battery level, range 0-100 %, read-only
                     _LOGGER.debug("Found switch battery sensor in %s", device.get('name'))
                     sensors.append(
@@ -117,14 +118,16 @@ async def async_setup_entry(
                 _LOGGER.error("Invalid device data format: %s", e)
                 continue
 
-    # Phase 1 / R9: hub-level diagnostic sensors driven by cfg:getver
-    # (cached at integration setup, see __init__.py).
+    # Phase 1 / R9: hub-level diagnostic sensors driven by cfg:getver; D4
+    # (R25) the hub coordinator re-reads it daily, plus cfg:timezone.
+    hub_coordinator: Optional[LifeSmartHubCoordinator] = entry_data.get("hub_coordinator")
     hub_info = entry_data.get("hub_info") or {}
-    host = entry_data.get("host", "")
-    for field in ("ver", "osver", "mgatype"):
+    hub_key = entry_data.get("hub_key") or entry_data.get("host", "")
+    for field in ("ver", "osver", "mgatype", "timezone"):
         sensors.append(LifeSmartHubInfoSensor(
-            hub_info=hub_info, host=host, field=field,
+            hub_info=hub_info, hub_key=hub_key, field=field,
             config_entry_title=config_entry.title or "LifeSmart Hub",
+            hub_coordinator=hub_coordinator,
         ))
 
     _LOGGER.debug("Adding %s sensors", len(sensors))
@@ -457,13 +460,12 @@ class LifeSmartSignalSensor(LifeSmartBaseSensor):
 
 
 class LifeSmartHubInfoSensor(SensorEntity):
-    """Hub-level identity sensor driven by cfg:getver (LI §3.3.10).
+    """Hub-level sensor driven by cfg:getver / cfg:timezone (LI §3.3.10).
 
-    Three instances per integration entry — ver / osver / mgatype. Mounted on
-    the synthetic hub device (identifiers `(DOMAIN, f"hub_{host}")`) so they
-    group with the future reboot button. Pure cache reader — no API calls.
-    Refresh is owned by __init__.py (currently single-shot at setup; bump to
-    24h timer if hubs upgrade in place).
+    Four instances per integration entry — ver / osver / mgatype / timezone.
+    Mounted on the synthetic hub device so they group with the reboot
+    button. No API calls of their own: D4 (R25) the hub coordinator re-reads
+    the values daily and these follow it.
     """
 
     _attr_should_poll = False
@@ -472,35 +474,75 @@ class LifeSmartHubInfoSensor(SensorEntity):
 
     # Field-specific labels and unique_id slugs.
     _FIELD_META = {
-        "ver":     ("Firmware version", "firmware"),
-        "osver":   ("OS version",       "os"),
-        "mgatype": ("Model",            "model"),
+        "ver":      ("Firmware version", "firmware"),
+        "osver":    ("OS version",       "os"),
+        "mgatype":  ("Model",            "model"),
+        "timezone": ("Time zone",        "timezone"),
     }
 
     def __init__(
         self,
         hub_info: Dict[str, Any],
-        host: str,
+        hub_key: str,
         field: str,
         config_entry_title: str,
+        hub_coordinator: Optional[LifeSmartHubCoordinator] = None,
     ) -> None:
         self._field = field
+        self._hub_coordinator = hub_coordinator
+        self._unsub_coordinator: Optional[Callable[[], None]] = None
         label, slug = self._FIELD_META[field]
-        host_slug = host.replace(".", "_")  # 192.168.1.50 -> 192_168_1_50
 
         self._attr_name = label
-        self._attr_unique_id = f"hub_{slug}_{host_slug}"
+        # D21 (R25): hub_key is the hub ID; for older entries still the host,
+        # whose slug gives the pre-R25 `hub_firmware_192_168_1_50`.
+        self._attr_unique_id = f"hub_{slug}_{hub_key_slug(hub_key)}"
         # Hub-level entity_id is hand-written per CLAUDE.md convention.
         self.entity_id = f"sensor.lifesmart_hub_{slug}"
-
-        # Pre-format the mgatype value if a friendly name exists.
-        raw = hub_info.get(field)
-        if field == "mgatype" and isinstance(raw, str):
-            self._attr_native_value = HUB_MODEL_NAMES.get(raw, raw)
-        else:
-            self._attr_native_value = raw
+        self._apply(hub_info)
 
         # R19: same kwargs as __init__.py's registry call and button.py, built
         # by device_info.py (R17 omit-unknown sw_version and R18 str() live
         # there) — no item assignment, DeviceInfo is a dataclass from 2026.11.
-        self._attr_device_info = hub_device_info(host, config_entry_title, hub_info)
+        self._attr_device_info = hub_device_info(hub_key, config_entry_title, hub_info)
+
+    def _apply(self, hub_info: Dict[str, Any]) -> None:
+        raw = hub_info.get(self._field)
+        if self._field == "mgatype" and isinstance(raw, str):
+            self._attr_native_value = HUB_MODEL_NAMES.get(raw, raw)
+        elif self._field == "timezone":
+            # LI §3.3.10: [-12, 12], east positive; `summer` = DST.
+            self._attr_native_value = f"UTC{raw:+d}" if isinstance(raw, int) else None
+            summer = hub_info.get("summer")
+            self._attr_extra_state_attributes = (
+                {"daylight_saving": summer} if isinstance(summer, bool) else {}
+            )
+        else:
+            self._attr_native_value = raw
+
+    async def async_added_to_hass(self) -> None:
+        if self._hub_coordinator is not None:
+            self._unsub_coordinator = self._hub_coordinator.async_add_listener(
+                self._handle_coordinator_update
+            )
+
+    async def async_will_remove_from_hass(self) -> None:
+        if self._unsub_coordinator:
+            self._unsub_coordinator()
+            self._unsub_coordinator = None
+
+    @callback
+    def async_entity_id_changed(self, old_entity_id: str) -> None:
+        """Opt in to in-place entity_id renames (HA 2026.11+, R19).
+
+        The coordinator listener is keyed on the bound method, not the
+        entity_id, so there is nothing to re-key.
+        """
+        super().async_entity_id_changed(old_entity_id)
+
+    @callback
+    def _handle_coordinator_update(self) -> None:
+        if self._hub_coordinator is None or self._hub_coordinator.data is None:
+            return
+        self._apply(self._hub_coordinator.data)
+        self.async_write_ha_state()

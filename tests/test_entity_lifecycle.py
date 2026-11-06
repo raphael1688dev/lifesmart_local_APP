@@ -17,7 +17,10 @@ from unittest.mock import Mock
 import pytest
 
 from lifesmart.binary_sensor import LifeSmartConnectivitySensor
+from lifesmart.button import LifeSmartHubRebootButton
 from lifesmart.cover import LifeSmartCover
+from lifesmart.event import LifeSmartButtonEvent
+from lifesmart.light import LifeSmartGroupLight
 from lifesmart.sensor import (
     LifeSmartBaseSensor,
     LifeSmartBatterySensor,
@@ -25,7 +28,7 @@ from lifesmart.sensor import (
     LifeSmartSignalSensor,
     LifeSmartTemperatureSensor,
 )
-from lifesmart.switch import LifeSmartSwitch
+from lifesmart.switch import LifeSmartGroupSwitch, LifeSmartSwitch
 
 _ADD_REMOVE_METHODS = (
     "async_prepare_to_add_to_hass",
@@ -45,12 +48,21 @@ def _requires_readd(entity_class: type) -> bool:
     )
 
 
-HOOK_OWNERS = [LifeSmartBaseSensor, LifeSmartConnectivitySensor, LifeSmartCover, LifeSmartSwitch]
+HOOK_OWNERS = [
+    LifeSmartBaseSensor,
+    LifeSmartConnectivitySensor,
+    LifeSmartCover,
+    LifeSmartSwitch,
+    LifeSmartHubInfoSensor,    # R25: follows the hub coordinator now
+    LifeSmartHubRebootButton,  # R25: cancels its reload timer on removal
+    LifeSmartButtonEvent,      # R25
+]
 ALL_ENTITY_CLASSES = HOOK_OWNERS + [
     LifeSmartTemperatureSensor,
     LifeSmartBatterySensor,
     LifeSmartSignalSensor,
-    LifeSmartHubInfoSensor,  # no add/remove hooks at all — in place regardless
+    LifeSmartGroupSwitch,  # no add/remove hooks at all — in place regardless
+    LifeSmartGroupLight,
 ]
 
 

@@ -18,10 +18,15 @@ Two device shapes exist in this integration:
   child devices" post keeps `via_device_id` for "a hub and the devices it
   talks to", which is exactly what a LifeSmart station and its paired
   switches / curtains / remotes are.
-* hub — the synthetic top-level device, identifiers `(DOMAIN, f"hub_{host}")`,
-  fed by cfg:getver (LI §3.3.10). Built in three places (registry call in
-  __init__.py, hub sensors, reboot button); they must agree, so they share
-  `hub_device_info_kwargs`.
+* hub — the synthetic top-level device, identifiers
+  `(DOMAIN, f"hub_{hub_key}")`, fed by cfg:getver (LI §3.3.10). Built in
+  several places (registry call in __init__.py, hub sensors, reboot button,
+  group scenes); they must agree, so they share `hub_device_info_kwargs`.
+
+`hub_key` (D21, R25) is the hub's own ID — `agt` / `agtid`, "Device ID of the
+Smart Station" (LI §6.1, §4.1) — so the hub device survives an IP change.
+Hubs set up before R25, or whose ID could not be read, keep the host IP as
+key; __init__.py `_resolve_hub_key` / `_migrate_hub_key` decide and move it.
 """
 from typing import Any, Dict, Mapping, Optional
 
@@ -90,15 +95,25 @@ def sub_device_info(
     )
 
 
+def hub_key_slug(hub_key: str) -> str:
+    """The hub key as it appears at the end of hub-level unique_ids.
+
+    Dots become underscores, so a host key gives the pre-R25 form
+    (`hub_firmware_192_168_1_50`) and those unique_ids stay unchanged.
+    """
+    return hub_key.replace(".", "_")
+
+
 def hub_device_info_kwargs(
-    host: str,
+    hub_key: str,
     title: Optional[str],
     hub_info: Mapping[str, Any],
 ) -> Dict[str, Any]:
     """Return the DeviceInfo fields for the synthetic hub device.
 
-    * identifiers use the host IP — stable across remove / re-add of the
-      config entry, which `entry_id` is not (see CLAUDE.md hub template).
+    * identifiers use `hub_key` (the hub ID, or the host IP for older
+      entries) — stable across remove / re-add of the config entry, which
+      `entry_id` is not (see CLAUDE.md hub template).
     * `name`: the config entry title, else DEFAULT_HUB_NAME.
     * `model`: friendly name from HUB_MODEL_NAMES (LI §3.3.10 L1561-1576),
       the raw mgatype if unknown, DEFAULT_HUB_MODEL if cfg:getver failed.
@@ -111,7 +126,7 @@ def hub_device_info_kwargs(
     """
     mgatype = hub_info.get("mgatype")
     kwargs: Dict[str, Any] = {
-        "identifiers": {(DOMAIN, f"hub_{host}")},
+        "identifiers": {(DOMAIN, f"hub_{hub_key}")},
         "name": title or DEFAULT_HUB_NAME,
         "manufacturer": MANUFACTURER,
         "model": (
@@ -127,9 +142,9 @@ def hub_device_info_kwargs(
 
 
 def hub_device_info(
-    host: str,
+    hub_key: str,
     title: Optional[str],
     hub_info: Mapping[str, Any],
 ) -> DeviceInfo:
     """Build the DeviceInfo for the hub device. See hub_device_info_kwargs."""
-    return DeviceInfo(**hub_device_info_kwargs(host, title, hub_info))
+    return DeviceInfo(**hub_device_info_kwargs(hub_key, title, hub_info))

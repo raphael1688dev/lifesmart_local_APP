@@ -7,9 +7,20 @@ import struct
 import logging
 from collections.abc import Callable
 from typing import Any, Dict, Optional, Tuple
-from .const import API_PORT, REMARK, CMD_NOTIFY, CMD_REPORT, CMD_SET
+from .const import API_PORT, REMARK, CMD_GET, CMD_NOTIFY, CMD_REPORT, CMD_SET
 
 _LOGGER = logging.getLogger(__name__)
+
+# D18 (R25): UDP drops a request now and then. Reads are safe to resend, so a
+# GET gets one more attempt by default; SET commands do not, because some
+# act on each delivery (doscene, IR keys, reboot, reset, upgrade). The few
+# idempotent SETs that only read or set a fixed value opt in explicitly.
+DEFAULT_GET_RETRIES = 1
+
+# LI §5.2: groupsw / grouphw / grouprgbw scenes take args.type.
+SCENE_TYPE_ON = 0x81
+SCENE_TYPE_OFF = 0x80
+
 
 class LifeSmartAPI:
     def __init__(self, host: str, model: str, token: str, timeout: int = 5, local_port: int = 12346):
@@ -123,7 +134,36 @@ class LifeSmartAPI:
                 self._state_listeners.pop(key, None)
         return _unsub
 
-    async def send_command(self, obj: str, args: Dict[str, Any], pkg_type: int, timeout: Optional[float] = None) -> Dict[str, Any]:
+    async def send_command(
+        self,
+        obj: str,
+        args: Dict[str, Any],
+        pkg_type: int,
+        timeout: Optional[float] = None,
+        retries: Optional[int] = None,
+    ) -> Dict[str, Any]:
+        """Send one request and wait for its reply.
+
+        `retries` is how many more times to resend after a timeout; it
+        defaults to DEFAULT_GET_RETRIES for CMD_GET and 0 otherwise. Each
+        attempt uses a fresh message id, so a late reply to an abandoned
+        attempt is ignored instead of being taken for the new one.
+        """
+        if retries is None:
+            retries = DEFAULT_GET_RETRIES if pkg_type == CMD_GET else 0
+        attempt = 0
+        while True:
+            try:
+                return await self._send_once(obj, args, pkg_type, timeout)
+            except asyncio.TimeoutError:
+                if attempt >= retries:
+                    raise
+                attempt += 1
+                _LOGGER.debug("No reply to %s, resending (%d/%d)", obj, attempt, retries)
+
+    async def _send_once(
+        self, obj: str, args: Dict[str, Any], pkg_type: int, timeout: Optional[float]
+    ) -> Dict[str, Any]:
         await self.async_start()
         if self._transport is None:
             raise RuntimeError("UDP transport not started")
@@ -153,7 +193,8 @@ class LifeSmartAPI:
         args = {
             "cmd": "getlist"
         }
-        response = await self.send_command("spotremote", args, 3)
+        # A read, despite pkg_type SET — safe to resend (D18).
+        response = await self.send_command("spotremote", args, CMD_SET, retries=1)
         
         if response and response.get("code") == 0 and "msg" in response:
             remote_list = response["msg"]
@@ -168,31 +209,64 @@ class LifeSmartAPI:
         return []
 
     async def configure_event_service(self, host: str, port: int) -> Dict[str, Any]:
+        # Idempotent: re-subscribing the same host/port is harmless (D18).
         args = {"cfg": "notify", "host": host, "port": port}
-        return await self.send_command("config", args, CMD_SET)
+        return await self.send_command("config", args, CMD_SET, retries=1)
 
     async def get_hub_version(self) -> Dict[str, Any]:
         """LI §3.3.10 cfg:getver — returns ver / osver / mgatype."""
-        return await self.send_command("config", {"cfg": "getver"}, CMD_SET)
+        return await self.send_command("config", {"cfg": "getver"}, CMD_SET, retries=1)
 
     async def reboot_hub(self) -> Dict[str, Any]:
         """LI §3.3.10 cfg:reboot — hub executes immediately, ack-then-restart."""
         return await self.send_command("config", {"cfg": "reboot"}, CMD_SET)
 
+    async def get_hub_timezone(self) -> Dict[str, Any]:
+        """LI §3.3.10 / OD §2.3.1 cfg:timezone without arguments — reads the
+        current `timezone` ([-12, 12]) and `summer` (DST) back."""
+        return await self.send_command("config", {"cfg": "timezone"}, CMD_SET, retries=1)
+
+    async def set_hub_timezone(self, timezone: int, summer: bool) -> Dict[str, Any]:
+        """LI §3.3.10 / OD §2.3.1 cfg:timezone. Idempotent (sets fixed values)."""
+        args = {"cfg": "timezone", "timezone": timezone, "summer": summer}
+        return await self.send_command("config", args, CMD_SET, retries=1)
+
+    async def set_device_name(self, name: str, me: Optional[str] = None) -> Dict[str, Any]:
+        """LI §3.3.10 cfg:devname — renames the hub, or sub-device `me`."""
+        args: Dict[str, Any] = {"cfg": "devname", "name": name}
+        if me is not None:
+            args["me"] = me
+        return await self.send_command("config", args, CMD_SET, retries=1)
+
+    async def upgrade_hub(self, reboot: bool) -> Dict[str, Any]:
+        """LI §3.3.10 cfg:upgrade — downloads the latest official package from
+        LifeSmart's server; with `reboot` the hub restarts once downloaded.
+        The `url` / `info` options for other packages are not exposed."""
+        args: Dict[str, Any] = {"cfg": "upgrade"}
+        if reboot:
+            args["reboot"] = True
+        return await self.send_command("config", args, CMD_SET)
+
+    async def factory_reset_hub(self) -> Dict[str, Any]:
+        """LI §3.3.10 cfg:reset — restores factory settings and restarts."""
+        return await self.send_command("config", {"cfg": "reset"}, CMD_SET)
+
     async def get_scene_list(self) -> Dict[str, Any]:
         """LI §3.3.5 obj=scene GET — returns list of {id, name, desc, cls}."""
         return await self.send_command("scene", {}, 1)  # CMD_GET = 1
 
-    async def trigger_scene(self, scene_id: str) -> Dict[str, Any]:
+    async def trigger_scene(self, scene_id: str, scene_type: int = 128) -> Dict[str, Any]:
         """LI §3.3.6 obj=doscene SET — fires a scene by AI... id.
 
         Spec example (L1067-1097) passes args.args.type=128. For cls=scene /
         groupirc the spec text marks parameters as N/A, but firmware seems to
-        require the nested args envelope — we replicate the example shape.
+        require the nested args envelope — we replicate the example shape
+        (D2, unverified on hardware). Group scenes (LI §5.2 groupsw /
+        grouphw / grouprgbw) pass SCENE_TYPE_ON / SCENE_TYPE_OFF.
         """
         return await self.send_command(
             "doscene",
-            {"id": scene_id, "args": {"type": 128}},
+            {"id": scene_id, "args": {"type": scene_type}},
             CMD_SET,
         )
 
@@ -202,7 +276,7 @@ class LifeSmartAPI:
             "id": remote_id,
             "cmd": "getkeys"
         }
-        return await self.send_command("spotremote", args, 3)
+        return await self.send_command("spotremote", args, CMD_SET, retries=1)
 
     async def send_remote_key(self, remote_id: str, key: str) -> Dict[str, Any]:
         """Send IR remote key command."""
@@ -211,7 +285,8 @@ class LifeSmartAPI:
             "cmd": "sendkey",
             "key": key
         }
-        return await self.send_command("spotremote", args, 3)
+        # Never resent: a key such as volume-up acts on every delivery.
+        return await self.send_command("spotremote", args, CMD_SET)
 
     def _handle_datagram(self, data: bytes) -> None:
         if len(data) < 10:
@@ -289,6 +364,33 @@ def _extract_state_changes(message: Dict[str, Any]) -> list[tuple[str, str, Any]
                     out.append((me, "stat", v))
 
     return out
+
+
+def _extract_membership_changes(message: Dict[str, Any]) -> Tuple[set[str], set[str]]:
+    """Return the sub-device ids a NOTIFY reports as added and as deleted.
+
+    LI §4.1 lists `add` and `del` next to `chg`, each carrying `devtype` and
+    `me` (`add` also `name` / `stat`), but gives no JSON example. `chg` is a
+    list of objects at the top level of the message, so `add` / `del` are
+    read the same way, accepting a single object too, at the top level or
+    under `msg`. Unverified on hardware (D6): an unexpected shape yields
+    nothing, so it can only miss an event, not invent one.
+    """
+    found: Dict[str, set[str]] = {"add": set(), "del": set()}
+    containers = [message]
+    if isinstance(message.get("msg"), dict):
+        containers.append(message["msg"])
+    for container in containers:
+        for key, ids in found.items():
+            items = container.get(key)
+            if isinstance(items, dict):
+                items = [items]
+            if not isinstance(items, list):
+                continue
+            for item in items:
+                if isinstance(item, dict) and isinstance(item.get("me"), str):
+                    ids.add(item["me"])
+    return found["add"], found["del"]
 
 
 class _LifeSmartDatagramProtocol(asyncio.DatagramProtocol):
