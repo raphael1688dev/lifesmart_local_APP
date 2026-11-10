@@ -163,3 +163,9 @@ def test_builders_equal_kwargs_form():
     """The three hub callers (registry / sensor / button) must agree."""
     assert hub_device_info("h", "t", HUB_INFO) == di.DeviceInfo(**hub_device_info_kwargs("h", "t", HUB_INFO))
     assert sub_device_info(DEVICE, "x") == di.DeviceInfo(**sub_device_info_kwargs(DEVICE, "x"))
+
+
+def test_defed_hub_gets_a_friendly_model_name():
+    """R29: `LSDEFED` is not in LI §3.3.10's list but a real DEFED hub reports it."""
+    assert hub_device_info_kwargs("h", "t", {"mgatype": "LSDEFED"})["model"] == "DEFED Smart Station"
+

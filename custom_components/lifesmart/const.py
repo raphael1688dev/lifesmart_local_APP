@@ -25,6 +25,10 @@ HUB_MODEL_NAMES = {
     "LSNAMIV4": "NatureMini L",
     "LSMGANAV1": "NatureMini S / Nature 7",
     "LSHI3518": "Old version of Smart Station",
+    # Not in the spec's list. Reported by a DEFED hub on 2026-11-10 (firmware
+    # 1.0.94p10, Linux 4.4.94); "DEFED Smart Station" is the name OpenDev 1.9
+    # §2.3 uses for that hub family.
+    "LSDEFED": "DEFED Smart Station",
 }
 
 # Command Types
