@@ -153,8 +153,8 @@ def test_press_release_buttons(val, expected):
 
 
 @pytest.mark.parametrize("val, expected", [
-    (1, ("multi_press_end", {"multi_press_count": 1})),
-    (2, ("multi_press_end", {"multi_press_count": 2})),
+    (1, ("single_press", None)),
+    (2, ("multi_press", {"press_count": 2})),
     (255, ("long_press_start", None)),
 ])
 def test_clicker_v2_gestures(val, expected):
@@ -306,3 +306,30 @@ def test_each_attempt_uses_a_new_message_id():
     with pytest.raises(asyncio.TimeoutError):
         asyncio.run(api.send_command("eps", {}, CMD_GET, timeout=0.01))
     assert len(ids) == 2 and ids[0] != ids[1]
+
+
+# --- R27: HA 2026.12 button event types ---------------------------------------
+
+def test_event_types_avoid_deprecated_members():
+    """2026.12 deprecates multi_press_end / multi_press_count (gone in
+    2027.5.0) and the event module must not touch them, not even at import."""
+    import ast
+    import inspect
+    import lifesmart.event as ev
+    tree = ast.parse(inspect.getsource(ev))
+    deprecated = {"MULTI_PRESS_END", "MULTI_PRESS_ONGOING", "ATTR_MULTI_PRESS_COUNT", "ButtonEventType"}
+    used = {a.name for n in ast.walk(tree) if isinstance(n, ast.ImportFrom) for a in n.names}
+    used |= {n.attr for n in ast.walk(tree) if isinstance(n, ast.Attribute)}
+    used |= {n.id for n in ast.walk(tree) if isinstance(n, ast.Name)}
+    assert not used & deprecated
+    types = {t for _, value_map in ev.BUTTON_CHANNELS.values() for t, _ in value_map.values()}
+    assert types <= {"press_start", "press_end", "single_press", "multi_press",
+                     "long_press_start", "long_press_end"}
+
+
+def test_multi_press_is_listed_with_single_press():
+    """HA: only list multi_press when single_press is listed too."""
+    from lifesmart.event import BUTTON_CHANNELS
+    for _, value_map in BUTTON_CHANNELS.values():
+        types = {t for t, _ in value_map.values()}
+        assert "multi_press" not in types or "single_press" in types
