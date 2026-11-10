@@ -65,7 +65,8 @@ async def async_get_device_diagnostics(
     """Return diagnostics for a single device.
 
     Identifiers come from DeviceInfo — for sub-devices `(DOMAIN, me)`, for
-    the synthetic hub device `(DOMAIN, f"hub_{host}")`. We try both shapes.
+    the synthetic hub device `(DOMAIN, f"hub_{hub_key}")` (hub ID, or the host
+    for entries older than R25). We try both shapes.
     """
     entry_data = hass.data.get(DOMAIN, {}).get("entries", {}).get(entry.entry_id, {})
     devices = entry_data.get("devices") or []

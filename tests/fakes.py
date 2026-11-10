@@ -104,10 +104,18 @@ class FakeAPI:
 
 
 class FakeDevice(SimpleNamespace):
-    pass
+    """A device registry entry as of HA 2026.11: one `config_entry_id`.
+
+    R28: deliberately no `config_entries` — that property is deprecated
+    (removed in HA 2027.10.0), and R25 used it because the old fake had it.
+    """
 
 
 class FakeDeviceRegistry:
+    """R28: offers only the lookups HA 2026.11 does not deprecate. There is
+    no `async_get_device(identifiers=…)` (removed in HA 2027.8.0), so code
+    that calls it fails here instead of logging a warning for the user."""
+
     def __init__(self, log: list) -> None:
         self.calls: list = []
         self.updates: list = []
@@ -117,31 +125,32 @@ class FakeDeviceRegistry:
     def async_get_or_create(self, **kwargs):
         self._log.append("hub_device")
         self.calls.append(kwargs)
-        existing = self.async_get_device(identifiers=kwargs["identifiers"])
-        if existing is not None:
-            return existing
+        for identifier in kwargs["identifiers"]:
+            existing = self.async_get_device_by_identifier(identifier, kwargs["config_entry_id"])
+            if existing is not None:
+                return existing
         device = FakeDevice(
             id=HUB_REGISTRY_ID if not self.devices else f"device-{len(self.devices)}",
             identifiers=set(kwargs["identifiers"]),
-            config_entries={kwargs["config_entry_id"]},
+            config_entry_id=kwargs["config_entry_id"],
         )
         self.devices[device.id] = device
         return device
 
     def add(self, device_id: str, identifiers: set, entry_id: str) -> FakeDevice:
-        device = FakeDevice(id=device_id, identifiers=identifiers, config_entries={entry_id})
+        device = FakeDevice(id=device_id, identifiers=identifiers, config_entry_id=entry_id)
         self.devices[device_id] = device
         return device
 
     def entries_for(self, entry_id: str) -> list:
-        return [d for d in self.devices.values() if entry_id in d.config_entries]
+        return [d for d in self.devices.values() if d.config_entry_id == entry_id]
 
     def async_get(self, device_id: str):
         return self.devices.get(device_id)
 
-    def async_get_device(self, identifiers):
+    def async_get_device_by_identifier(self, identifier, config_entry_id):
         for device in self.devices.values():
-            if device.identifiers & set(identifiers):
+            if device.config_entry_id == config_entry_id and identifier in device.identifiers:
                 return device
         return None
 
@@ -237,6 +246,14 @@ class FakeTimers:
             handle[1](None)
 
 
+class FakeEntry(SimpleNamespace):
+    """Config entry stand-in. Background tasks are collected, not started:
+    `setup()` awaits them after async_setup_entry, as HA's loop would."""
+
+    def async_create_background_task(self, hass, coro, name):
+        self.background.append(coro)
+
+
 def make_env(monkeypatch) -> SimpleNamespace:
     """Patch the integration's collaborators; return the handles tests inspect."""
     log: list = []
@@ -274,17 +291,29 @@ def make_env(monkeypatch) -> SimpleNamespace:
         lambda hass, domain, issue_id, **kw: issues.deleted.append(issue_id),
     )
     hass = FakeHass(log)
-    entry = SimpleNamespace(
+    entry = FakeEntry(
         entry_id="entry1", title="Living room hub", version=2, domain=DOMAIN,
         data={"host": HOST, "token": "0123456789abcdef", "model": "OD_ALI_TECH"},
+        background=[],
     )
     hass.config_entries.entries[entry.entry_id] = entry
     return SimpleNamespace(hass=hass, entry=entry, log=log, issues=issues, apis=apis,
                            dev_reg=dev_reg, ent_reg=ent_reg, timers=timers)
 
 
-def setup(env) -> None:
-    assert asyncio.run(lifesmart.async_setup_entry(env.hass, env.entry)) is None
+def setup(env, run_background: bool = True) -> None:
+    """async_setup (actions) + async_setup_entry, then the background tasks.
+
+    With run_background=False the collected coroutines stay in
+    `env.entry.background` for the test to run or close.
+    """
+    async def run() -> None:
+        assert await lifesmart.async_setup(env.hass, {}) is True
+        assert await lifesmart.async_setup_entry(env.hass, env.entry) is None
+        if run_background:
+            while env.entry.background:
+                await env.entry.background.pop(0)
+    asyncio.run(run())
 
 
 def entry_data(env) -> dict:

@@ -116,8 +116,10 @@ def test_hub_version_issue_is_linked_to_the_entry(env, monkeypatch):
     monkeypatch.setattr(FakeAPI, "get_hub_version",
                         lambda self: asyncio.sleep(0, {"code": 1}))
     _setup(env)
-    (issue_id, kw), = env.issues.created
-    assert issue_id == "hub_version_unknown_entry1"
+    # Raised at setup and again, unchanged, when the background time zone
+    # read notifies the listeners — HA treats an identical create as a no-op.
+    assert {issue_id for issue_id, _ in env.issues.created} == {"hub_version_unknown_entry1"}
+    issue_id, kw = env.issues.created[0]
     assert kw["config_entry_id"] == "entry1"
     assert kw["translation_key"] == "hub_version_unknown"
 

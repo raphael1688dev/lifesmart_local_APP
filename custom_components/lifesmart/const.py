@@ -30,7 +30,7 @@ HUB_MODEL_NAMES = {
 # Command Types
 CMD_GET = 1    # Query command
 CMD_SET = 3    # Control command
-CMD_REPORT = 2 # Status report
+CMD_GET_REPLY = 2  # LI §3.1 GET-REPLY (was misnamed CMD_REPORT "status report" before R28)
 CMD_NOTIFY = 9 # Event notify (OpenDev event service)
 
 # Value Types

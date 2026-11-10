@@ -129,8 +129,12 @@ class LifeSmartHubCoordinator(DataUpdateCoordinator[Dict[str, Any]]):
         )
         self._api = api
 
-    async def async_fetch(self) -> Dict[str, Any]:
-        """Read cfg:getver and cfg:timezone; merge into the previous data."""
+    async def async_fetch(self, include_timezone: bool = True) -> Dict[str, Any]:
+        """Read cfg:getver (and cfg:timezone); merge into the previous data.
+
+        Setup passes include_timezone=False and reads the time zone through
+        async_load_timezone afterwards (R28).
+        """
         info: Dict[str, Any] = dict(self.data or {})
         version: Optional[Dict[str, Any]] = None
         try:
@@ -143,15 +147,24 @@ class LifeSmartHubCoordinator(DataUpdateCoordinator[Dict[str, Any]]):
         if version is not None:
             info.update(version)
         info["version_ok"] = version is not None
+        if include_timezone:
+            info.update(await self._async_read_timezone())
+        return info
 
+    async def _async_read_timezone(self) -> Dict[str, Any]:
+        """`timezone` / `summer` from the hub, or {} when it cannot be read."""
         try:
             timezone = parse_timezone(await self._api.get_hub_timezone())
         except (asyncio.TimeoutError, OSError, KeyError, ValueError) as err:
             _LOGGER.debug("Failed to query hub time zone (cfg:timezone): %s", err)
-            timezone = None
-        if timezone is not None:
-            info.update(timezone)
-        return info
+            return {}
+        return timezone or {}
+
+    async def async_load_timezone(self) -> None:
+        """Read the time zone once, outside setup, and tell the listeners."""
+        timezone = await self._async_read_timezone()
+        if timezone:
+            self.async_set_updated_data({**(self.data or {}), **timezone})
 
     async def _async_update_data(self) -> Dict[str, Any]:
         return await self.async_fetch()

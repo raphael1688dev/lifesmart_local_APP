@@ -150,18 +150,22 @@ class LifeSmartSwitch(SwitchEntity):
         keeps removing and re-adding the
         entity on rename (compat path, removed in 2027.11) because this class
         defines async_added_to_hass / async_will_remove_from_hass.
-        Never called on HA <= 2026.10.
         """
         super().async_entity_id_changed(old_entity_id)
 
-    async def _async_update_state(self, *_):
-        """Fetch state from device."""
+    async def _async_update_state(self, *_, retries: Optional[int] = None):
+        """Fetch state from device.
+
+        `retries` goes to api.send_command (None = its default for a GET).
+        The command path passes 0: it holds the send lock, and a silent hub
+        should not keep the next command waiting for two timeouts (R28).
+        """
         try:
             args = {
                 "me": self._device["me"],
                 "idx": self._idx
             }
-            response = await self._api.send_command("ep", args, CMD_GET)
+            response = await self._api.send_command("ep", args, CMD_GET, retries=retries)
             if response.get("code") == 0 and "msg" in response:
                 new_state = response["msg"]["data"][self._idx]["v"]
                 self._state = bool(new_state)
@@ -267,9 +271,9 @@ class LifeSmartSwitch(SwitchEntity):
                 try:
                     await asyncio.wait_for(self._confirm_event.wait(), timeout=1.5)
                 except asyncio.TimeoutError:
-                    await self._async_update_state()
+                    await self._async_update_state(retries=0)
             else:
-                await self._async_update_state()
+                await self._async_update_state(retries=0)
         except (asyncio.TimeoutError, OSError, KeyError, ValueError, TypeError) as ex:
             _LOGGER.error("Error sending command: %s", type(ex).__name__)
             self._failures += 1

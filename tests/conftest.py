@@ -103,6 +103,12 @@ def _install_ha_stubs() -> None:
     helpers.__path__ = []  # type: ignore[attr-defined]
     sys.modules["homeassistant.helpers"] = helpers
 
+    # R28: __init__.py defines CONFIG_SCHEMA next to async_setup.
+    cv_mod = types.ModuleType("homeassistant.helpers.config_validation")
+    cv_mod.config_entry_only_config_schema = lambda domain: (lambda config: config)
+    sys.modules["homeassistant.helpers.config_validation"] = cv_mod
+    helpers.config_validation = cv_mod  # type: ignore[attr-defined]
+
     ent_reg = types.ModuleType("homeassistant.helpers.entity_registry")
     ent_reg.async_get = lambda hass: None
     sys.modules["homeassistant.helpers.entity_registry"] = ent_reg
@@ -151,7 +157,10 @@ def _install_ha_stubs() -> None:
             pass
 
         def async_set_updated_data(self, data) -> None:
+            # R28: like the real one, tell the listeners.
             self.data = data
+            for listener in list(self.listeners):
+                listener()
 
     class _UpdateFailed(Exception):
         pass

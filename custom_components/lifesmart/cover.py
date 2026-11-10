@@ -135,7 +135,6 @@ class LifeSmartCover(CoverEntity):
         keeps removing and re-adding the
         entity on rename (compat path, removed in 2027.11) because this class
         defines async_added_to_hass / async_will_remove_from_hass.
-        Never called on HA <= 2026.10.
         """
         super().async_entity_id_changed(old_entity_id)
 

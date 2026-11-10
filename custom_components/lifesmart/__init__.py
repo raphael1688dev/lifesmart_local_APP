@@ -15,6 +15,7 @@ from homeassistant.exceptions import (
     ServiceValidationError,
 )
 from homeassistant.helpers import (
+    config_validation as cv,
     device_registry as dr,
     entity_registry as er,
     issue_registry as ir,
@@ -24,6 +25,10 @@ from .const import DOMAIN, PLATFORMS, API_TIMEOUT
 from .api import LifeSmartAPI, _extract_membership_changes
 from .coordinator import LifeSmartCoordinator, LifeSmartHubCoordinator
 from .device_info import hub_device_info_kwargs, hub_key_slug
+
+# R28: async_setup below only registers the actions; the integration is set
+# up from config entries (hassfest wants a CONFIG_SCHEMA next to async_setup).
+CONFIG_SCHEMA = cv.config_entry_only_config_schema(DOMAIN)
 
 # R19 (2026-10-24): raise the `hub_unreachable` repair issue once the hub has
 # not answered the 90 s notify refresh for this long. The translation existed
@@ -124,10 +129,16 @@ def _migrate_hub_key(
     """
     if not old_key or old_key == new_key:
         return
-    old_device = dev_reg.async_get_device(identifiers={(DOMAIN, f"hub_{old_key}")})
+    # R28: async_get_device(identifiers=…) is deprecated (identifiers are only
+    # unique per config entry; removed in HA 2027.8.0) — look up by entry.
+    old_device = dev_reg.async_get_device_by_identifier(
+        (DOMAIN, f"hub_{old_key}"), entry.entry_id
+    )
     if old_device is None:
         return
-    if dev_reg.async_get_device(identifiers={(DOMAIN, f"hub_{new_key}")}) is not None:
+    if dev_reg.async_get_device_by_identifier(
+        (DOMAIN, f"hub_{new_key}"), entry.entry_id
+    ) is not None:
         _LOGGER.warning(
             "Hub device for %s already exists; leaving the one for %s in place",
             new_key, old_key,
@@ -170,6 +181,17 @@ def _async_update_version_issue(hass: HomeAssistant, entry: ConfigEntry, info: M
     )
 
 
+async def async_setup(hass: HomeAssistant, config: Dict[str, Any]) -> bool:
+    """Register the integration's actions (R28).
+
+    HA's `action-setup` rule: actions belong in async_setup, not in
+    async_setup_entry, so they exist even while a hub's entry is not loaded
+    and can then say so, instead of being an unknown action.
+    """
+    _async_register_services(hass)
+    return True
+
+
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> None:
     """Set up LifeSmart Local from a config entry.
 
@@ -204,7 +226,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> None:
         await api.async_stop()
         raise ConfigEntryNotReady from err
 
-    domain_data = hass.data.setdefault(DOMAIN, {"entries": {}, "_services_registered": False})
+    domain_data = hass.data.setdefault(DOMAIN, {"entries": {}})
 
     devices = []
     if isinstance(discovery, dict):
@@ -224,8 +246,11 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> None:
     # from one cached dict. D4 (R25): a coordinator re-reads it, and the hub
     # time zone, once a day. Failures are non-fatal — the hub entities show
     # the last known values and D17 raises a repair issue.
+    # R28: only cfg:getver is read here. cfg:timezone is read in the
+    # background once setup is done — a hub that does not answer it would
+    # otherwise hold up every start for two timeouts.
     hub_coordinator = LifeSmartHubCoordinator(hass, api, entry.data["host"])
-    hub_info = await hub_coordinator.async_fetch()
+    hub_info = await hub_coordinator.async_fetch(include_timezone=False)
     hub_coordinator.async_set_updated_data(hub_info)
     _async_update_version_issue(hass, entry, hub_info)
 
@@ -304,8 +329,6 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> None:
     _migrate_unique_ids(hass, entry, devices)
     _migrate_entity_ids(hass, entry)
 
-    _async_register_services(hass)
-
     local_ip = await hass.async_add_executor_job(_get_local_ip_for_target, entry.data["host"])
     try:
         await api.configure_event_service(local_ip, api.local_port)
@@ -380,6 +403,10 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> None:
     unsubs.append(_cancel_pending_reload)
 
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
+
+    entry.async_create_background_task(
+        hass, hub_coordinator.async_load_timezone(), f"{DOMAIN} hub time zone"
+    )
 
 
 async def _async_fetch_scenes(api: LifeSmartAPI) -> List[Dict[str, Any]]:
@@ -523,7 +550,9 @@ def _sub_device_me(
     if not device_id:
         return None
     device = dr.async_get(hass).async_get(device_id)
-    if device is None or entry.entry_id not in device.config_entries:
+    # R28: DeviceEntry.config_entries is deprecated (a device belongs to one
+    # config entry; removed in HA 2027.10.0).
+    if device is None or device.config_entry_id != entry.entry_id:
         raise ServiceValidationError(f"Device {device_id} does not belong to {entry.title}")
     for domain, identifier in device.identifiers:
         if domain != DOMAIN:
@@ -533,9 +562,7 @@ def _sub_device_me(
 
 
 def _async_register_services(hass: HomeAssistant) -> None:
-    domain_data = hass.data.setdefault(DOMAIN, {"entries": {}, "_services_registered": False})
-    if domain_data["_services_registered"]:
-        return
+    """Called once from async_setup."""
 
     async def _handle_send_keys(call: ServiceCall) -> None:
         remote_id = call.data["remote_id"]
@@ -632,7 +659,6 @@ def _async_register_services(hass: HomeAssistant) -> None:
             vol.Required("confirm"): bool,
         }),
     )
-    domain_data["_services_registered"] = True
 
 def generate_entity_id(device_type, hub_id, device_id, idx=None):
     if idx is not None:

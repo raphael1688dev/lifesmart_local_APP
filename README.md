@@ -107,7 +107,7 @@ Each action takes the hub's integration entry (`config_entry_id`), so several hu
 | Action | What it does |
 |---|---|
 | `lifesmart.set_hub_timezone` | Sets the hub's time zone (`timezone`, whole hours from -12 to 12, east positive) and `daylight_saving`. |
-| `lifesmart.rename_device` | Sets the name the hub stores for one of its devices (`device_id`), or for the hub itself when no device is given. The integration reloads afterwards to show it. |
+| `lifesmart.rename_device` | Sets the name the hub stores for one of its devices (`device_id`), or for the hub itself when no device is given. The integration reloads afterwards so a renamed device shows its new name. A renamed hub looks the same in Home Assistant, because the hub device there is named after the integration entry; the new name shows in the LifeSmart app. |
 | `lifesmart.upgrade_hub_firmware` | Downloads the latest official firmware from LifeSmart's server to the hub. It takes effect after the hub restarts; set `reboot` to restart as soon as the download finishes. |
 | `lifesmart.factory_reset_hub` | Restores the hub's factory settings and restarts it. Requires `confirm: true`. This cannot be undone. |
 
@@ -134,6 +134,7 @@ Each action takes the hub's integration entry (`config_entry_id`), so several hu
 - The curtain's position is read from channel `P1`. The spec does not say which channel reports curtain state, so this is not verified on hardware.
 - Group scenes (`groupsw`, `grouphw`, `grouprgbw`) are on/off only. The hub does not report their state, so Home Assistant shows the last command it sent. Setting a group's colour is not supported: the spec does not say which parameter carries it.
 - The scene trigger parameters follow the spec's example and have not been tested on every scene type.
+- Scenes, group scenes, button events and the hub actions were written from the spec and have not been run against a real hub. Up to `20261110r0` the request signature was built wrongly for scene triggers, for `set_hub_timezone`, and for `upgrade_hub_firmware` with `reboot`, so those very likely failed. The spec does not say how such requests are signed; if one still fails, please open an issue with the diagnostics file.
 - The spec gives no example of the hub's "device paired" / "device removed" messages. The automatic reload follows the documented field names and has not been tested on hardware.
 - IR remotes are supported only through `SL_P_IR` (SPOT mini).
 

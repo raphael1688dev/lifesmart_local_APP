@@ -7,7 +7,7 @@ import struct
 import logging
 from collections.abc import Callable
 from typing import Any, Dict, Optional, Tuple
-from .const import API_PORT, REMARK, CMD_GET, CMD_NOTIFY, CMD_REPORT, CMD_SET
+from .const import API_PORT, REMARK, CMD_GET, CMD_GET_REPLY, CMD_NOTIFY, CMD_SET
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -38,14 +38,29 @@ class LifeSmartAPI:
         self.ts_offset: int = 0
 
     def _create_signature(self, obj: str, args: Dict[str, Any], ts: int) -> str:
+        """LI §3.2.1: obj, the args sorted by name, ts, model, token → MD5.
+
+        R28 (2026-11-10): values are written the way the hub sees them in the
+        JSON it receives, not with Python's str():
+        * bool → `true` / `false`. str() gave `True` / `False`, which no hub
+          can produce from JSON, so cfg:timezone (`summer`) and cfg:upgrade
+          (`reboot`) could not verify.
+        * nested objects are left out, like arrays ("If the args parameter is
+          in array or list format, this parameter is not used during
+          signature calculation"). str() gave `{'type': 128}` for doscene.
+        The spec does not spell out either case and neither is verified on
+        hardware; the old forms were certainly wrong.
+        """
         sortable_items = []
         for k, v in args.items():
-            if isinstance(v, (list, tuple)):
+            if isinstance(v, (list, tuple, dict)):
                 continue
             sortable_items.append((k, v))
         sorted_args = sorted(sortable_items)
         parts = [f"obj:{obj}"]
         for k, v in sorted_args:
+            if isinstance(v, bool):
+                v = "true" if v else "false"
             parts.append(f"{k}:{v}")
         parts.append(f"ts:{ts}")
         parts.append(f"model:{self.model}")
@@ -301,14 +316,18 @@ class LifeSmartAPI:
             _LOGGER.debug("Failed to parse UDP datagram: %s", err)
             return
 
+        # R28: a NOTIFY carries its own `id`, the event id (LI §4.1). Matching
+        # it against pending requests handed the event to whichever request
+        # shared that number and dropped the event itself.
         msg_id = message.get("id")
-        if isinstance(msg_id, int):
+        if isinstance(msg_id, int) and pkg_type != CMD_NOTIFY:
             fut = self._pending.get(msg_id)
             if fut is not None and not fut.done():
                 fut.set_result(message)
                 return
 
-        if pkg_type in (CMD_REPORT, CMD_NOTIFY):
+        # Unmatched GET-REPLY packets are still handed on, as before R28.
+        if pkg_type in (CMD_GET_REPLY, CMD_NOTIFY):
             for listener in tuple(self._report_listeners):
                 try:
                     listener(message)

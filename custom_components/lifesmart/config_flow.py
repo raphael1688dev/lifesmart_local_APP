@@ -11,6 +11,11 @@ from .api import LifeSmartAPI
 
 _LOGGER = logging.getLogger(__name__)
 
+# R28: per-attempt timeout while the form is open. Discovery is a GET, which
+# is sent twice (api.py D18), so the form answers within 10 s as it did
+# before R25 — instead of 20 s — and survives one lost packet.
+FLOW_TIMEOUT = 5
+
 def _has_devices(msg) -> bool:
     if isinstance(msg, list):
         return bool(msg)
@@ -111,7 +116,7 @@ class LifeSmartConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                     host=user_input[CONF_HOST],
                     model=user_input["model"],
                     token=user_input[CONF_TOKEN],
-                    timeout=10,
+                    timeout=FLOW_TIMEOUT,
                     local_port=0
                 )
 
@@ -154,7 +159,7 @@ class LifeSmartConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                     host=user_input[CONF_HOST],
                     model=user_input.get("model", DEFAULT_MODEL),
                     token=user_input[CONF_TOKEN],
-                    timeout=10,
+                    timeout=FLOW_TIMEOUT,
                     local_port=0
                 )
 
