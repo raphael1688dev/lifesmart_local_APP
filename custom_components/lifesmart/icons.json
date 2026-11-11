@@ -1,0 +1,19 @@
+{
+    "services": {
+        "send_keys": {
+            "service": "mdi:remote"
+        },
+        "set_hub_timezone": {
+            "service": "mdi:map-clock"
+        },
+        "rename_device": {
+            "service": "mdi:rename"
+        },
+        "upgrade_hub_firmware": {
+            "service": "mdi:update"
+        },
+        "factory_reset_hub": {
+            "service": "mdi:restore-alert"
+        }
+    }
+}

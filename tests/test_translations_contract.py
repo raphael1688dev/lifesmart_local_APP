@@ -75,3 +75,35 @@ def test_config_flow_has_no_options_flow():
     # own namespace, not hasattr (which would see the base method).
     assert "async_get_options_flow" not in LifeSmartConfigFlow.__dict__
     assert not hasattr(cf, "LifeSmartOptionsFlowHandler")
+
+
+# --- R31: rules hassfest enforces for core integrations only -----------------------
+
+def _service_names():
+    text = (PKG / "services.yaml").read_text()
+    return set(re.findall(r"^([a-z_]+):\s*$", text, flags=re.M))
+
+
+def test_every_action_has_an_icon():
+    """hassfest: "Service X has no icon in icons.json" (core only)."""
+    icons = json.loads((PKG / "icons.json").read_text())["services"]
+    assert set(icons) == _service_names()
+    assert all(v["service"].startswith("mdi:") for v in icons.values())
+
+
+@pytest.mark.parametrize("lang", LANGS)
+def test_every_action_is_translated(lang):
+    """hassfest: every action and field needs a name and description (core only)."""
+    services = _load(lang)["services"]
+    assert set(services) == _service_names()
+    for name, service in services.items():
+        assert service["name"] and service["description"], name
+        for field, texts in service["fields"].items():
+            assert texts["name"], (name, field)
+
+
+def test_manifest_declares_integration_type():
+    """hassfest: a config-flow integration must declare one (core only)."""
+    manifest = json.loads((PKG / "manifest.json").read_text())
+    assert manifest["integration_type"] == "hub"
+

@@ -71,6 +71,7 @@ jobs:
         run: |
           set -e
           for f in custom_components/lifesmart/manifest.json \
+                   custom_components/lifesmart/icons.json \
                    custom_components/lifesmart/translations/*.json \
                    hacs.json; do
             python -c "import json,sys; json.load(open('$f')); print('OK  $f')"
