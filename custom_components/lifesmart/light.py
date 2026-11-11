@@ -33,6 +33,7 @@ async def async_setup_entry(
             hub_key=hub_key,
             hub_info=runtime.hub_info,
             title=config_entry.title or "LifeSmart Hub",
+            availability=runtime.availability,
         )
         for scene in group_scenes(runtime.scenes, LIGHT_GROUP_CLASSES)
     )

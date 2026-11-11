@@ -5,8 +5,8 @@ updated in place instead of being removed and re-added. For custom
 integrations HA keeps the old remove + re-add path (until 2027.11) when a
 class outside core defines async_prepare_to_add_to_hass / async_added_to_hass /
 async_will_remove_from_hass but neither it nor a subclass defines
-async_entity_id_changed. Our four entity bases define the add/remove hooks, so
-each must define the opt-in hook too.
+async_entity_id_changed. R32: one class, entity.py's LifeSmartEntity, defines
+the add/remove hooks and the opt-in hook for every entity.
 
 `_requires_readd` below is the logic of HA dev's
 `homeassistant.helpers.entity._entity_class_requires_readd` (read 2026-10-24),
@@ -19,8 +19,11 @@ import pytest
 from lifesmart.binary_sensor import LifeSmartConnectivitySensor
 from lifesmart.button import LifeSmartHubRebootButton
 from lifesmart.cover import LifeSmartCover
+from lifesmart.entity import LifeSmartDeviceEntity, LifeSmartEntity, LifeSmartHubEntity
 from lifesmart.event import LifeSmartButtonEvent
 from lifesmart.light import LifeSmartGroupLight
+from lifesmart.remote import LifeSmartRemote
+from lifesmart.scene import LifeSmartScene
 from lifesmart.sensor import (
     LifeSmartBaseSensor,
     LifeSmartBatterySensor,
@@ -48,21 +51,29 @@ def _requires_readd(entity_class: type) -> bool:
     )
 
 
-HOOK_OWNERS = [
+# R32: the add / remove hooks and the rename hook live on one class,
+# entity.py's LifeSmartEntity. Platform classes must not define the add /
+# remove hooks themselves: HA would not credit the base class's rename hook
+# for them (it has to be on the same class or a subclass).
+HOOK_OWNERS = [LifeSmartEntity]
+ALL_ENTITY_CLASSES = [
+    LifeSmartEntity,
+    LifeSmartDeviceEntity,
+    LifeSmartHubEntity,
     LifeSmartBaseSensor,
-    LifeSmartConnectivitySensor,
-    LifeSmartCover,
-    LifeSmartSwitch,
-    LifeSmartHubInfoSensor,    # R25: follows the hub coordinator now
-    LifeSmartHubRebootButton,  # R25: cancels its reload timer on removal
-    LifeSmartButtonEvent,      # R25
-]
-ALL_ENTITY_CLASSES = HOOK_OWNERS + [
     LifeSmartTemperatureSensor,
     LifeSmartBatterySensor,
     LifeSmartSignalSensor,
-    LifeSmartGroupSwitch,  # no add/remove hooks at all — in place regardless
+    LifeSmartHubInfoSensor,
+    LifeSmartConnectivitySensor,
+    LifeSmartCover,
+    LifeSmartSwitch,
+    LifeSmartGroupSwitch,
     LifeSmartGroupLight,
+    LifeSmartHubRebootButton,
+    LifeSmartButtonEvent,
+    LifeSmartRemote,
+    LifeSmartScene,
 ]
 
 
@@ -79,15 +90,30 @@ def test_hook_defined_next_to_the_add_remove_hooks(cls):
     assert "async_entity_id_changed" in cls.__dict__
 
 
-@pytest.mark.parametrize("cls", HOOK_OWNERS, ids=lambda c: c.__name__)
+@pytest.mark.parametrize(
+    "cls", [c for c in ALL_ENTITY_CLASSES if c is not LifeSmartEntity], ids=lambda c: c.__name__,
+)
+def test_only_the_base_class_defines_lifecycle_and_availability(cls):
+    """R32: platform classes use `_subscribe` / `_async_initial_refresh` /
+    `_cleanup`. `available` is decided in entity.py for all of them."""
+    own = [c for c in cls.__mro__ if c.__module__.startswith("lifesmart.") and c is not LifeSmartEntity]
+    for owner in own:
+        defined = set(owner.__dict__)
+        assert not defined & set(_ADD_REMOVE_METHODS), owner.__name__
+        assert "async_entity_id_changed" not in defined, owner.__name__
+        if owner is not LifeSmartDeviceEntity:
+            assert "available" not in defined, owner.__name__
+
+
+@pytest.mark.parametrize("cls", ALL_ENTITY_CLASSES, ids=lambda c: c.__name__)
 def test_hook_chains_to_super(cls, monkeypatch):
     """The hook must call super() so HA's base class can move its own
-    bookkeeping. Give the (stubbed) base the method and check it is reached."""
-    base = cls.__mro__[1]
+    bookkeeping. Give the (stubbed) HA base the method and check it is reached."""
+    ha_base = LifeSmartEntity.__mro__[1]
     base_hook = Mock()
-    monkeypatch.setattr(base, "async_entity_id_changed", base_hook, raising=False)
+    monkeypatch.setattr(ha_base, "async_entity_id_changed", base_hook)
     entity = object.__new__(cls)  # no __init__: hooks must not depend on it
-    cls.async_entity_id_changed(entity, "sensor.old_id")
+    entity.async_entity_id_changed("sensor.old_id")
     base_hook.assert_called_once_with("sensor.old_id")
 
 

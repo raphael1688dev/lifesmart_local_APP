@@ -40,7 +40,9 @@ class FakeAPI:
         self.notify_error: Optional[BaseException] = None
         self.stopped = False
         self.report_listeners: List[Callable[[Dict[str, Any]], None]] = []
-        self.state_listeners: Dict[tuple, Callable[[Any], None]] = {}
+        # (me, idx) -> listeners, several per key like the real API (R32:
+        # every entity of a device listens to its `stat`).
+        self.state_listeners: Dict[tuple, List[Callable[[Any], None]]] = {}
         self.calls: List[tuple] = []
         self.reply: Any = {"code": 0, "msg": {}}
 
@@ -75,8 +77,22 @@ class FakeAPI:
         return lambda: self.report_listeners.remove(listener)
 
     def register_state_listener(self, me, idx, listener):
-        self.state_listeners[(me, idx)] = listener
-        return lambda: self.state_listeners.pop((me, idx), None)
+        bucket = self.state_listeners.setdefault((me, idx), [])
+        bucket.append(listener)
+
+        def unsub() -> None:
+            bucket.remove(listener)
+            if not bucket:
+                self.state_listeners.pop((me, idx), None)
+        return unsub
+
+    def push(self, me, idx, value) -> None:
+        """Deliver a pushed value as the real API's NOTIFY dispatch does."""
+        for listener in list(self.state_listeners.get((me, idx), [])):
+            listener(value)
+
+    def send_command(self, obj, args, pkg_type, timeout=None, retries=None):
+        return self._record("send_command", obj, args, pkg_type)
 
     async def _record(self, *call):
         self.calls.append(call)

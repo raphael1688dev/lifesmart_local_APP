@@ -5,9 +5,10 @@ from typing import Optional
 from homeassistant.components.switch import SwitchDeviceClass, SwitchEntity
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
-from homeassistant.helpers.entity import DeviceInfo
 from .const import CMD_GET, CMD_SET
-from .device_info import sub_device_info
+from .availability import HubAvailability
+from .coordinator import LifeSmartCoordinator
+from .entity import LifeSmartDeviceEntity
 from .group_scene import SWITCH_GROUP_CLASSES, LifeSmartGroupScene, group_scenes
 from . import generate_entity_id
 from .models import LifeSmartConfigEntry
@@ -76,6 +77,8 @@ async def async_setup_entry(
                                 idx=channel,
                                 name=channel_name,
                                 hub_device_id=hub_device_id,
+                                coordinator=runtime.coordinator,
+                                availability=runtime.availability,
                             )
                         )
 
@@ -90,6 +93,7 @@ async def async_setup_entry(
                 hub_key=hub_key,
                 hub_info=runtime.hub_info,
                 title=config_entry.title or "LifeSmart Hub",
+                availability=runtime.availability,
             )
         )
 
@@ -102,65 +106,59 @@ class LifeSmartGroupSwitch(LifeSmartGroupScene, SwitchEntity):
     _attr_device_class = SwitchDeviceClass.SWITCH
 
 
-class LifeSmartSwitch(SwitchEntity):
-    _attr_should_poll = False
+class LifeSmartSwitch(LifeSmartDeviceEntity, SwitchEntity):
+    """One channel (L1 / L2 / L3) of a switch.
+
+    R32: lifecycle and availability are in entity.py. The coordinator is
+    only the fallback for the device's `stat`; the on / off state comes from
+    push and from the reads below.
+    """
+
     _attr_device_class = SwitchDeviceClass.SWITCH  # R32: quality scale `entity-device-class`
     # R18: HA 2026.5 naming — `_attr_name` is the channel label only ("L1" or
     # the firmware-provided channel name); the frontend prepends the device name.
-    _attr_has_entity_name = True
 
-    def __init__(self, api, device, idx, name, hub_device_id: Optional[str] = None):
+    def __init__(
+        self,
+        api,
+        device,
+        idx,
+        name,
+        hub_device_id: Optional[str] = None,
+        coordinator: Optional[LifeSmartCoordinator] = None,
+        availability: Optional[HubAvailability] = None,
+    ):
         """Initialize the switch."""
-        self._api = api
-        self._device = device
-        self._idx = idx
-        self._hub_device_id = hub_device_id
+        super().__init__(
+            api, device, idx,
+            hub_device_id=hub_device_id, coordinator=coordinator,
+            availability=availability, default_name="LifeSmart Switch",
+        )
         self._attr_name = name
-        self._available = True
-        self._unsub_report = None
         self._expected_state = None
         self._confirm_event = None
-        self._failures = 0
         self._send_lock = asyncio.Lock()
         self._send_task: asyncio.Task | None = None
         self._pending_value: int | None = None
         self._pending_waiters: list[asyncio.Future] = []
-        
+
         device_type = device.get('devtype')
         hub_id = device.get('agt', '')
         device_id = device['me']
         # Include agt (R10) — `me` collides across hubs on system devices.
         self._attr_unique_id = f"switch_{hub_id}_{device_id}_{idx}"
         self.entity_id = f"switch.{generate_entity_id(device_type, hub_id, device_id, idx)}"
-        
+
         initial_state = device.get("data", {}).get(idx, {}).get("v", 0)
         self._state = bool(initial_state)
 
-    async def async_added_to_hass(self):
-        """When entity is added to hass."""
-        self._unsub_report = self._api.register_state_listener(self._device["me"], self._idx, self._handle_state_value)
+    async def _async_initial_refresh(self) -> None:
         await self._async_update_state()
 
-    async def async_will_remove_from_hass(self):
-        """When entity is removed from hass."""
-        if self._unsub_report:
-            self._unsub_report()
-            self._unsub_report = None
+    def _cleanup(self) -> None:
         if self._send_task:
             self._send_task.cancel()
             self._send_task = None
-
-    @callback
-    def async_entity_id_changed(self, old_entity_id: str) -> None:
-        """Opt in to in-place entity_id renames (HA 2026.11+, R19).
-
-        Nothing here is keyed on entity_id — the push listener keys on
-        (me, idx) — so there is nothing to re-key. Without this method HA
-        keeps removing and re-adding the
-        entity on rename (compat path, removed in 2027.11) because this class
-        defines async_added_to_hass / async_will_remove_from_hass.
-        """
-        super().async_entity_id_changed(old_entity_id)
 
     async def _async_update_state(self, *_, retries: Optional[int] = None):
         """Fetch state from device.
@@ -178,7 +176,6 @@ class LifeSmartSwitch(SwitchEntity):
             if response.get("code") == 0 and "msg" in response:
                 new_state = response["msg"]["data"][self._idx]["v"]
                 self._state = bool(new_state)
-                self._available = True
                 _LOGGER.debug(
                     "Switch %s state updated: %s (value=%s)", 
                     self.entity_id, 
@@ -187,45 +184,24 @@ class LifeSmartSwitch(SwitchEntity):
                 )
             self.async_write_ha_state()
         except (asyncio.TimeoutError, OSError, KeyError, ValueError, TypeError) as ex:
-            self._failures += 1
-            if self._failures >= 3:
-                self._available = False
-            self.async_write_ha_state()
+            # R32: one failed read no longer counts towards "unavailable".
+            # That is decided for the whole hub (availability.py) and by the
+            # device's `stat`, not per entity.
+            _LOGGER.debug("Switch %s state read failed: %s", self.entity_id, type(ex).__name__)
 
+    @callback
     def _handle_state_value(self, val) -> None:
         if not isinstance(val, (int, float)):
             return
         self._state = bool(int(val))
-        self._available = True
-        self._failures = 0
         if self._confirm_event and self._expected_state is not None and self._state == self._expected_state:
             self._confirm_event.set()
-        if self.hass:
-            self.hass.async_create_task(self._async_write_state())
-
-    async def _async_write_state(self) -> None:
-        self.async_write_ha_state()
-
-    @property
-    def available(self):
-        """Return True if entity is available."""
-        return self._available
+        self._async_write_if_added()
 
     @property
     def is_on(self):
         """Return true if device is on."""
         return self._state
-
-    @property
-    def device_info(self) -> DeviceInfo:
-        """Return device info.
-
-        R19: built in one go by device_info.py — DeviceInfo is a dataclass
-        from HA 2026.11, so no item assignment. via_device_id (D22) there.
-        """
-        return sub_device_info(
-            self._device, self._hub_device_id, default_name="LifeSmart Switch"
-        )
 
     async def async_turn_on(self, **kwargs):
         """Turn the switch on."""
@@ -275,8 +251,6 @@ class LifeSmartSwitch(SwitchEntity):
                 response = {"code": 0}
 
             if response.get("code") == 0:
-                self._available = True
-                self._failures = 0
                 try:
                     await asyncio.wait_for(self._confirm_event.wait(), timeout=1.5)
                 except asyncio.TimeoutError:
@@ -285,10 +259,6 @@ class LifeSmartSwitch(SwitchEntity):
                 await self._async_update_state(retries=0)
         except (asyncio.TimeoutError, OSError, KeyError, ValueError, TypeError) as ex:
             _LOGGER.error("Error sending command: %s", type(ex).__name__)
-            self._failures += 1
-            if self._failures >= 3:
-                self._available = False
-            self.async_write_ha_state()
         finally:
             self._expected_state = None
             self._confirm_event = None

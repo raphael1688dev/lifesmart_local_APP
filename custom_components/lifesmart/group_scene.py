@@ -20,10 +20,10 @@ import logging
 from typing import Any, Dict, List, Optional
 
 from homeassistant.exceptions import HomeAssistantError
-from homeassistant.helpers.entity import DeviceInfo
 
 from .api import SCENE_TYPE_OFF, SCENE_TYPE_ON
-from .device_info import hub_device_info
+from .availability import HubAvailability
+from .entity import LifeSmartHubEntity
 from .scene import _slugify
 
 _LOGGER = logging.getLogger(__name__)
@@ -37,14 +37,11 @@ def group_scenes(scenes: List[Dict[str, Any]], classes: set[str]) -> List[Dict[s
     return [s for s in scenes if s.get("cls") in classes]
 
 
-class LifeSmartGroupScene:
+class LifeSmartGroupScene(LifeSmartHubEntity):
     """On / off through `doscene`; mixed in before SwitchEntity / LightEntity."""
 
     _attr_assumed_state = True
-    _attr_has_entity_name = True
-    _attr_should_poll = False
     _attr_is_on: Optional[bool]
-    _attr_device_info: DeviceInfo
 
     def __init__(
         self,
@@ -54,7 +51,9 @@ class LifeSmartGroupScene:
         hub_key: str,
         hub_info: Dict[str, Any],
         title: str,
+        availability: Optional[HubAvailability] = None,
     ) -> None:
+        super().__init__(hub_key, title, hub_info, availability)
         self._api = api
         self._scene_id: str = scene["id"]
         name = scene.get("name") or self._scene_id
@@ -65,7 +64,6 @@ class LifeSmartGroupScene:
         self._attr_unique_id = f"scene_group_{self._scene_id}"
         id_tail = self._scene_id[-8:] if len(self._scene_id) > 8 else self._scene_id
         self.entity_id = f"{platform}.lifesmart_{_slugify(name)}_{id_tail.lower()}"
-        self._attr_device_info = hub_device_info(hub_key, title, hub_info)
 
     async def async_turn_on(self, **kwargs: Any) -> None:
         await self._async_send(SCENE_TYPE_ON, True)
@@ -81,4 +79,4 @@ class LifeSmartGroupScene:
         if not isinstance(reply, dict) or reply.get("code") != 0:
             raise HomeAssistantError(f"The hub rejected scene {self._scene_id}: {reply}")
         self._attr_is_on = is_on
-        self.async_write_ha_state()  # type: ignore[attr-defined]
+        self.async_write_ha_state()

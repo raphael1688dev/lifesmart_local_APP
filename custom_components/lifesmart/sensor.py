@@ -1,6 +1,6 @@
 """Platform for LifeSmart sensor integration."""
 import logging
-from typing import Any, Callable, Dict, Optional, List
+from typing import Any, Dict, Optional, List
 import asyncio
 from homeassistant.components.sensor import (
     SensorDeviceClass,
@@ -9,7 +9,7 @@ from homeassistant.components.sensor import (
 )
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
-from homeassistant.helpers.entity import DeviceInfo, EntityCategory
+from homeassistant.helpers.entity import EntityCategory
 from homeassistant.const import (
     PERCENTAGE,
     SIGNAL_STRENGTH_DECIBELS_MILLIWATT,
@@ -17,7 +17,9 @@ from homeassistant.const import (
 )
 from .const import CMD_GET, HUB_MODEL_NAMES
 from .coordinator import LifeSmartCoordinator, LifeSmartHubCoordinator
-from .device_info import hub_device_info, hub_key_slug, sub_device_info
+from .availability import HubAvailability
+from .device_info import hub_key_slug
+from .entity import LifeSmartDeviceEntity, LifeSmartHubEntity
 from . import generate_entity_id
 from .models import LifeSmartConfigEntry
 _LOGGER = logging.getLogger(__name__)
@@ -40,6 +42,7 @@ async def async_setup_entry(
     coordinator = runtime.coordinator
     # D22: hub device registry ID — sub-devices hang off it via via_device_id.
     hub_device_id = runtime.hub_device_id
+    availability = runtime.availability
     devices = runtime.devices
     if not devices:
         try:
@@ -68,6 +71,7 @@ async def async_setup_entry(
                                 idx="T",
                                 coordinator=coordinator,
                                 hub_device_id=hub_device_id,
+                                availability=availability,
                             )
                         )
                 elif device.get("devtype") == "SL_P" and "data" in device and "P8" in device["data"]:
@@ -79,6 +83,7 @@ async def async_setup_entry(
                             idx="P8",
                             coordinator=coordinator,
                             hub_device_id=hub_device_id,
+                            availability=availability,
                         )
                     )
                 elif (
@@ -99,6 +104,7 @@ async def async_setup_entry(
                             idx="V",
                             coordinator=coordinator,
                             hub_device_id=hub_device_id,
+                            availability=availability,
                         )
                     )
 
@@ -113,6 +119,7 @@ async def async_setup_entry(
                             device=device,
                             coordinator=coordinator,
                             hub_device_id=hub_device_id,
+                            availability=availability,
                         )
                     )
             except KeyError as e:
@@ -131,33 +138,19 @@ async def async_setup_entry(
         sensors.append(LifeSmartHubInfoSensor(
             hub_info=hub_info, hub_key=hub_key, field=field,
             config_entry_title=config_entry.title or "LifeSmart Hub",
-            hub_coordinator=hub_coordinator,
+            hub_coordinator=hub_coordinator, availability=availability,
         ))
 
     _LOGGER.debug("Adding %s sensors", len(sensors))
     async_add_entities(sensors)
 
-class LifeSmartBaseSensor(SensorEntity):
-    """Base for periodically-polled sub-device sensors.
+class LifeSmartBaseSensor(LifeSmartDeviceEntity, SensorEntity):
+    """Base for sub-device sensors.
 
-    D15 (2026-05-24): periodic refresh now flows through the shared
-    LifeSmartCoordinator (one `eps` request per cycle instead of N).
-    The push state_listener mechanism stays — it's orthogonal and gives
-    near-real-time updates between coordinator cycles.
+    Values arrive by push (NOTIFY) and, as a fallback, from the shared
+    LifeSmartCoordinator's `eps` snapshot (D15: one request per cycle instead
+    of one per entity). Lifecycle and availability are in entity.py (R32).
     """
-
-    _attr_should_poll = False
-    # R18: HA 2026.5 naming — entity name describes only the function
-    # ("Battery"); the frontend prepends the device name. Explicit entity_ids
-    # are unaffected (platform uses our entity_id as suggested object id).
-    _attr_has_entity_name = True
-    _api: Any
-    _device: Dict[str, Any]
-    _idx: Optional[str]
-    _coordinator: Optional[LifeSmartCoordinator]
-    _attr_device_info: DeviceInfo
-    _unsub_report: Optional[Callable[[], None]]
-    _unsub_coordinator: Optional[Callable[[], None]]
 
     def __init__(
         self,
@@ -166,90 +159,32 @@ class LifeSmartBaseSensor(SensorEntity):
         idx: Optional[str] = None,
         coordinator: Optional[LifeSmartCoordinator] = None,
         hub_device_id: Optional[str] = None,
+        availability: Optional[HubAvailability] = None,
     ) -> None:
-        self._api = api
-        self._device = device
-        self._idx = idx
-        self._coordinator = coordinator
-        self._unsub_report = None
-        self._unsub_coordinator = None
-
         try:
-            # R19: built in one go by device_info.py — DeviceInfo is a
-            # dataclass from HA 2026.11, so no item assignment. via_device_id
-            # (D22) and sw_version handling live there.
-            self._attr_device_info = sub_device_info(
-                device, hub_device_id, default_name="LifeSmart Sensor"
+            super().__init__(
+                api, device, idx,
+                hub_device_id=hub_device_id, coordinator=coordinator,
+                availability=availability, default_name="LifeSmart Sensor",
             )
         except KeyError as e:
             _LOGGER.error("Missing required device info field: %s", e)
             raise
 
-    async def async_added_to_hass(self) -> None:
-        """Subscribe to push + coordinator."""
-        if self._idx is not None:
-            self._unsub_report = self._api.register_state_listener(
-                self._device["me"], self._idx, self._handle_state_value,
-            )
-        # One-shot initial fetch (don't wait for coordinator tick).
+    async def _async_initial_refresh(self) -> None:
+        """One read when added, rather than waiting for the coordinator."""
         await self._async_update()
-
-        # D15: replace per-entity timer with coordinator subscription.
-        if self._coordinator is not None:
-            self._unsub_coordinator = self._coordinator.async_add_listener(
-                self._handle_coordinator_update
-            )
-
-    async def async_will_remove_from_hass(self) -> None:
-        """When entity is removed from hass."""
-        if self._unsub_coordinator:
-            self._unsub_coordinator()
-            self._unsub_coordinator = None
-        if self._unsub_report:
-            self._unsub_report()
-            self._unsub_report = None
-
-    @callback
-    def async_entity_id_changed(self, old_entity_id: str) -> None:
-        """Opt in to in-place entity_id renames (HA 2026.11+, R19).
-
-        Nothing here is keyed on entity_id — push listeners key on (me, idx)
-        and the coordinator listener on the object — so there is nothing to
-        re-key. Without this method HA keeps removing and re-adding the
-        entity on rename (compat path, removed in 2027.11) because this class
-        defines async_added_to_hass / async_will_remove_from_hass.
-        """
-        super().async_entity_id_changed(old_entity_id)
 
     async def _async_update(self, *_: Any) -> None:
         """Abstract method to be implemented by child classes."""
         raise NotImplementedError
 
-    def _handle_coordinator_update(self) -> None:
-        """Called when coordinator finishes a polling cycle.
-
-        Subclasses override to pull their value out of the fresh device
-        dict in `self._coordinator.data[me]` and write_ha_state. Default
-        falls back to the legacy one-shot poll path.
-        """
-        if self.hass:
-            self.hass.async_create_task(self._async_update())
-
-    def _device_from_coordinator(self) -> Optional[Dict[str, Any]]:
-        """Read the freshest device dict from coordinator cache, if any."""
-        if self._coordinator is None or self._coordinator.data is None:
-            return None
-        return self._coordinator.data.get(self._device["me"])
-
+    @callback
     def _handle_state_value(self, val: Any) -> None:
         if not isinstance(val, (int, float)):
             return
         self._attr_native_value = val
-        if self.hass:
-            self.hass.async_create_task(self._async_write_state())
-
-    async def _async_write_state(self) -> None:
-        self.async_write_ha_state()
+        self._async_write_if_added()
 
 class LifeSmartTemperatureSensor(LifeSmartBaseSensor):
     _attr_name: str
@@ -264,8 +199,12 @@ class LifeSmartTemperatureSensor(LifeSmartBaseSensor):
         idx: str,
         coordinator: Optional[LifeSmartCoordinator] = None,
         hub_device_id: Optional[str] = None,
+        availability: Optional[HubAvailability] = None,
     ) -> None:
-        super().__init__(api, device, idx, coordinator=coordinator, hub_device_id=hub_device_id)
+        super().__init__(
+            api, device, idx, coordinator=coordinator,
+            hub_device_id=hub_device_id, availability=availability,
+        )
         try:
             # HA 2026.5 naming: _attr_name = function only;
             # device name is provided by DeviceInfo (base class).
@@ -285,30 +224,26 @@ class LifeSmartTemperatureSensor(LifeSmartBaseSensor):
             device_type = device.get('devtype')
             hub_id = device.get('agt', '')
             device_id = device['me']
-            self._idx = idx
             self.entity_id = f"sensor.{generate_entity_id(device_type, hub_id, device_id, idx)}"
 
         except KeyError as e:
             _LOGGER.error("Missing required temperature sensor field: %s", e)
             raise
 
+    @callback
     def _handle_state_value(self, val: Any) -> None:
         if not isinstance(val, (int, float)):
             return
         self._attr_native_value = float(val) / 10.0
-        if self.hass:
-            self.hass.async_create_task(self._async_write_state())
+        self._async_write_if_added()
 
-    def _handle_coordinator_update(self) -> None:
-        """D15: pull fresh value from coordinator's eps snapshot."""
-        device = self._device_from_coordinator()
-        if device is None:
-            return
+    def _update_from_device(self, device: Dict[str, Any]) -> bool:
+        """D15: the value from the coordinator's `eps` snapshot."""
         raw = device.get("data", {}).get(self._idx, {}).get("v")
-        if isinstance(raw, (int, float)):
-            self._attr_native_value = float(raw) / 10.0
-            if self.hass:
-                self.hass.async_create_task(self._async_write_state())
+        if not isinstance(raw, (int, float)):
+            return False
+        self._attr_native_value = float(raw) / 10.0
+        return True
 
     async def _async_update(self, *_: Any) -> None:
         """One-shot init fetch. Periodic refresh now handled by coordinator."""
@@ -339,8 +274,12 @@ class LifeSmartBatterySensor(LifeSmartBaseSensor):
         idx: str,
         coordinator: Optional[LifeSmartCoordinator] = None,
         hub_device_id: Optional[str] = None,
+        availability: Optional[HubAvailability] = None,
     ) -> None:
-        super().__init__(api, device, idx, coordinator=coordinator, hub_device_id=hub_device_id)
+        super().__init__(
+            api, device, idx, coordinator=coordinator,
+            hub_device_id=hub_device_id, availability=availability,
+        )
         try:
             # HA 2026.5 naming: _attr_name = function only;
             # device name is provided by DeviceInfo (base class).
@@ -354,22 +293,18 @@ class LifeSmartBatterySensor(LifeSmartBaseSensor):
             device_type = device.get('devtype')
             hub_id = device.get('agt', '')
             device_id = device['me']
-            self._idx = idx
             self.entity_id = f"sensor.{generate_entity_id(device_type, hub_id, device_id, idx)}"
         except KeyError as e:
             _LOGGER.error("Missing required battery sensor field: %s", e)
             raise
 
-    def _handle_coordinator_update(self) -> None:
-        """D15: pull fresh value from coordinator's eps snapshot."""
-        device = self._device_from_coordinator()
-        if device is None:
-            return
+    def _update_from_device(self, device: Dict[str, Any]) -> bool:
+        """D15: the value from the coordinator's `eps` snapshot."""
         raw = device.get("data", {}).get(self._idx, {}).get("v")
-        if isinstance(raw, (int, float)):
-            self._attr_native_value = int(raw)
-            if self.hass:
-                self.hass.async_create_task(self._async_write_state())
+        if not isinstance(raw, (int, float)):
+            return False
+        self._attr_native_value = int(raw)
+        return True
 
     async def _async_update(self, *_: Any) -> None:
         """One-shot init fetch. Periodic refresh now handled by coordinator."""
@@ -386,12 +321,12 @@ class LifeSmartBatterySensor(LifeSmartBaseSensor):
         except (asyncio.TimeoutError, OSError, KeyError, ValueError, TypeError) as e:
             _LOGGER.error("Unexpected error updating battery sensor: %s", e)
 
+    @callback
     def _handle_state_value(self, val: Any) -> None:
         if not isinstance(val, (int, float)):
             return
         self._attr_native_value = int(val)
-        if self.hass:
-            self.hass.async_create_task(self._async_write_state())
+        self._async_write_if_added()
 
 
 class LifeSmartSignalSensor(LifeSmartBaseSensor):
@@ -413,8 +348,12 @@ class LifeSmartSignalSensor(LifeSmartBaseSensor):
         device: Dict[str, Any],
         coordinator: Optional[LifeSmartCoordinator] = None,
         hub_device_id: Optional[str] = None,
+        availability: Optional[HubAvailability] = None,
     ) -> None:
-        super().__init__(api, device, idx=None, coordinator=coordinator, hub_device_id=hub_device_id)
+        super().__init__(
+            api, device, idx=None, coordinator=coordinator,
+            hub_device_id=hub_device_id, availability=availability,
+        )
         try:
             # HA 2026.5 naming: function only; device name from DeviceInfo.
             self._attr_name = "Signal strength"
@@ -437,16 +376,13 @@ class LifeSmartSignalSensor(LifeSmartBaseSensor):
             _LOGGER.error("Missing required signal sensor field: %s", e)
             raise
 
-    def _handle_coordinator_update(self) -> None:
-        """D15: pull fresh lDbm from coordinator's eps snapshot."""
-        device = self._device_from_coordinator()
-        if device is None:
-            return
+    def _update_from_device(self, device: Dict[str, Any]) -> bool:
+        """D15: `lDbm` from the coordinator's `eps` snapshot."""
         raw = device.get("lDbm")
-        if isinstance(raw, (int, float)):
-            self._attr_native_value = int(raw)
-            if self.hass:
-                self.hass.async_create_task(self._async_write_state())
+        if not isinstance(raw, (int, float)):
+            return False
+        self._attr_native_value = int(raw)
+        return True
 
     async def _async_update(self, *_: Any) -> None:
         """One-shot init fetch. Periodic refresh now handled by coordinator."""
@@ -462,7 +398,7 @@ class LifeSmartSignalSensor(LifeSmartBaseSensor):
             _LOGGER.error("Unexpected error updating signal sensor: %s", e)
 
 
-class LifeSmartHubInfoSensor(SensorEntity):
+class LifeSmartHubInfoSensor(LifeSmartHubEntity, SensorEntity):
     """Hub-level sensor driven by cfg:getver / cfg:timezone (LI §3.3.10).
 
     Four instances per integration entry — ver / osver / mgatype / timezone.
@@ -471,9 +407,7 @@ class LifeSmartHubInfoSensor(SensorEntity):
     the values daily and these follow it.
     """
 
-    _attr_should_poll = False
     _attr_entity_category = EntityCategory.DIAGNOSTIC
-    _attr_has_entity_name = True  # R18: "Firmware version" + hub device name
 
     # Field-specific labels and unique_id slugs.
     _FIELD_META = {
@@ -490,10 +424,13 @@ class LifeSmartHubInfoSensor(SensorEntity):
         field: str,
         config_entry_title: str,
         hub_coordinator: Optional[LifeSmartHubCoordinator] = None,
+        availability: Optional[HubAvailability] = None,
     ) -> None:
+        # R19: one hub DeviceInfo for the registry call, these sensors and
+        # the reboot button (device_info.py, through LifeSmartHubEntity).
+        super().__init__(hub_key, config_entry_title, hub_info, availability)
         self._field = field
         self._hub_coordinator = hub_coordinator
-        self._unsub_coordinator: Optional[Callable[[], None]] = None
         label, slug = self._FIELD_META[field]
 
         self._attr_name = label
@@ -503,11 +440,6 @@ class LifeSmartHubInfoSensor(SensorEntity):
         # Hub-level entity_id is hand-written per CLAUDE.md convention.
         self.entity_id = f"sensor.lifesmart_hub_{slug}"
         self._apply(hub_info)
-
-        # R19: same kwargs as __init__.py's registry call and button.py, built
-        # by device_info.py (R17 omit-unknown sw_version and R18 str() live
-        # there) — no item assignment, DeviceInfo is a dataclass from 2026.11.
-        self._attr_device_info = hub_device_info(hub_key, config_entry_title, hub_info)
 
     def _apply(self, hub_info: Dict[str, Any]) -> None:
         raw = hub_info.get(self._field)
@@ -523,29 +455,15 @@ class LifeSmartHubInfoSensor(SensorEntity):
         else:
             self._attr_native_value = raw
 
-    async def async_added_to_hass(self) -> None:
+    def _subscribe(self) -> None:
         if self._hub_coordinator is not None:
-            self._unsub_coordinator = self._hub_coordinator.async_add_listener(
-                self._handle_coordinator_update
+            self._unsubs.append(
+                self._hub_coordinator.async_add_listener(self._handle_coordinator_update)
             )
-
-    async def async_will_remove_from_hass(self) -> None:
-        if self._unsub_coordinator:
-            self._unsub_coordinator()
-            self._unsub_coordinator = None
-
-    @callback
-    def async_entity_id_changed(self, old_entity_id: str) -> None:
-        """Opt in to in-place entity_id renames (HA 2026.11+, R19).
-
-        The coordinator listener is keyed on the bound method, not the
-        entity_id, so there is nothing to re-key.
-        """
-        super().async_entity_id_changed(old_entity_id)
 
     @callback
     def _handle_coordinator_update(self) -> None:
         if self._hub_coordinator is None or self._hub_coordinator.data is None:
             return
         self._apply(self._hub_coordinator.data)
-        self.async_write_ha_state()
+        self._async_write_if_added()

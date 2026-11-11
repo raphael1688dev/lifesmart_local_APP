@@ -22,6 +22,7 @@ from homeassistant.helpers import (
 from homeassistant.helpers.event import async_call_later, async_track_time_interval
 from .const import DOMAIN, PLATFORMS, API_TIMEOUT
 from .api import LifeSmartAPI, _extract_membership_changes
+from .availability import HubAvailability
 from .coordinator import LifeSmartCoordinator, LifeSmartHubCoordinator
 from .device_info import hub_device_info_kwargs, hub_key_slug
 from .models import LifeSmartConfigEntry, LifeSmartData
@@ -301,6 +302,8 @@ async def async_setup_entry(hass: HomeAssistant, entry: LifeSmartConfigEntry) ->
         hub_coordinator=hub_coordinator,
         hub_device_id=hub_device.id,
         scenes=scenes,
+        # Setup got this far, so the hub is answering.
+        availability=HubAvailability(entry.data["host"]),
     )
     entry.runtime_data = runtime
     unsubs = runtime.unsubs
@@ -347,6 +350,9 @@ async def async_setup_entry(hass: HomeAssistant, entry: LifeSmartConfigEntry) ->
             await api.configure_event_service(local_ip, api.local_port)
         except (asyncio.TimeoutError, OSError) as err:
             _LOGGER.debug("Failed to refresh OpenDev event service: %s", err)
+            # R32: two of these in a row make the hub's entities unavailable
+            # (availability.py logs it once); five minutes raise the issue.
+            runtime.availability.record_failure(type(err).__name__)
             minutes = reachability.record_failure(time.monotonic())
             if minutes is not None:
                 ir.async_create_issue(
@@ -364,8 +370,10 @@ async def async_setup_entry(hass: HomeAssistant, entry: LifeSmartConfigEntry) ->
         except (KeyError, ValueError) as err:
             # The hub answered; the payload was odd. Reachable.
             _LOGGER.debug("Unexpected OpenDev event service reply: %s", err)
+        # The "answering again" line is logged by availability.py, once, and
+        # only if "not answering" was logged before it.
+        runtime.availability.record_success()
         if reachability.record_success():
-            _LOGGER.info("LifeSmart hub %s is answering again", entry.data["host"])
             ir.async_delete_issue(hass, DOMAIN, issue_id_unreachable)
 
     unsubs.append(async_track_time_interval(hass, _refresh_notify, timedelta(seconds=90)))

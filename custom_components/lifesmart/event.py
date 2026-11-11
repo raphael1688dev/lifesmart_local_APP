@@ -19,14 +19,16 @@ string values are the same in both, so they work on 2026.11 and 2026.12
 without a warning. Import the constants once the minimum HA is 2026.12.
 """
 import logging
-from typing import Any, Callable, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional, Tuple
 
 from homeassistant.components.event import EventDeviceClass, EventEntity
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
 from . import generate_entity_id
-from .device_info import sub_device_info
+from .availability import HubAvailability
+from .coordinator import LifeSmartCoordinator
+from .entity import LifeSmartDeviceEntity
 from .models import LifeSmartConfigEntry
 
 _LOGGER = logging.getLogger(__name__)
@@ -87,16 +89,22 @@ async def async_setup_entry(
             # Like the battery guard: create only what the firmware reports.
             if idx in data:
                 entities.append(
-                    LifeSmartButtonEvent(api, device, idx, value_map, hub_device_id)
+                    LifeSmartButtonEvent(
+                        api, device, idx, value_map, hub_device_id,
+                        coordinator=runtime.coordinator,
+                        availability=runtime.availability,
+                    )
                 )
     async_add_entities(entities)
 
 
-class LifeSmartButtonEvent(EventEntity):
-    """One button channel of a LifeSmart sub-device."""
+class LifeSmartButtonEvent(LifeSmartDeviceEntity, EventEntity):
+    """One button channel of a LifeSmart sub-device.
 
-    _attr_should_poll = False
-    _attr_has_entity_name = True
+    The coordinator is only the fallback for the device's `stat` (R32): a
+    button value read from `eps` is a state, not a press, and fires nothing.
+    """
+
     _attr_device_class = EventDeviceClass.BUTTON
 
     def __init__(
@@ -106,12 +114,15 @@ class LifeSmartButtonEvent(EventEntity):
         idx: str,
         value_map: Dict[int, Tuple[str, Optional[Dict[str, Any]]]],
         hub_device_id: Optional[str] = None,
+        coordinator: Optional[LifeSmartCoordinator] = None,
+        availability: Optional[HubAvailability] = None,
     ) -> None:
-        self._api = api
-        self._device = device
-        self._idx = idx
+        super().__init__(
+            api, device, idx,
+            hub_device_id=hub_device_id, coordinator=coordinator,
+            availability=availability,
+        )
         self._value_map = value_map
-        self._unsub_report: Optional[Callable[[], None]] = None
         me = device["me"]
         agt = device.get("agt", "")
         label = (device.get("data", {}).get(idx, {}).get("name") or "").replace("{$EPN}", "").strip()
@@ -119,33 +130,13 @@ class LifeSmartButtonEvent(EventEntity):
         self._attr_unique_id = f"event_{agt}_{me}_{idx}"
         self.entity_id = f"event.{generate_entity_id(device.get('devtype'), agt, me, idx)}"
         self._attr_event_types = sorted({event for event, _ in value_map.values()})
-        self._attr_device_info = sub_device_info(device, hub_device_id)
-
-    async def async_added_to_hass(self) -> None:
-        self._unsub_report = self._api.register_state_listener(
-            self._device["me"], self._idx, self._handle_value
-        )
-
-    async def async_will_remove_from_hass(self) -> None:
-        if self._unsub_report:
-            self._unsub_report()
-            self._unsub_report = None
 
     @callback
-    def async_entity_id_changed(self, old_entity_id: str) -> None:
-        """Opt in to in-place entity_id renames (HA 2026.11+, R19).
-
-        The push listener keys on (me, idx); nothing to re-key.
-        """
-        super().async_entity_id_changed(old_entity_id)
-
-    @callback
-    def _handle_value(self, val: Any) -> None:
+    def _handle_state_value(self, val: Any) -> None:
         mapped = self._value_map.get(int(val)) if isinstance(val, (int, float)) else None
         if mapped is None:
             _LOGGER.debug("Ignoring %s %s value %s", self._device["me"], self._idx, val)
             return
         event_type, attributes = mapped
         self._trigger_event(event_type, attributes)
-        if self.hass:
-            self.async_write_ha_state()
+        self._async_write_if_added()

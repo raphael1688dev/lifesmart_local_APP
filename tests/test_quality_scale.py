@@ -16,6 +16,7 @@ import pytest
 
 from lifesmart import diagnostics
 from lifesmart.const import DOMAIN, PLATFORMS
+from lifesmart.entity import LifeSmartEntity
 from lifesmart.models import LifeSmartConfigEntry, LifeSmartData
 
 from .fakes import AGT, HOST, HUB_REGISTRY_ID, make_env, runtime, setup, unload
@@ -169,3 +170,33 @@ def test_device_diagnostics(env):
     gone = SimpleNamespace(identifiers={(DOMAIN, "9999")})
     result = asyncio.run(diagnostics.async_get_device_diagnostics(env.hass, env.entry, gone))
     assert result["device_identifier"] == "9999"
+
+
+# --- common-modules / entity-unavailable (R32 step 3) -----------------------------
+
+def test_every_entity_class_derives_from_the_base_entity():
+    """common-modules: one base entity, in entity.py. It also carries
+    `available`, so no platform can forget entity-unavailable."""
+    assert (PKG / "entity.py").exists() and (PKG / "coordinator.py").exists()
+    strays = []
+    for platform in PLATFORMS:
+        module = importlib.import_module(f"lifesmart.{platform}")
+        for name, obj in vars(module).items():
+            if (
+                isinstance(obj, type)
+                and obj.__module__ == module.__name__
+                and name.startswith("LifeSmart")
+                and not issubclass(obj, LifeSmartEntity)
+            ):
+                strays.append(f"{platform}.{name}")
+    assert strays == []
+
+
+def test_readme_says_when_entities_are_unavailable():
+    """docs-data-update / docs-troubleshooting: the behaviour is documented."""
+    update = README.split("## How data is updated", 1)[1].split("\n## ", 1)[0]
+    assert "Unavailable" in update and "two renewals in a row" in update
+    trouble = README.split("## Troubleshooting", 1)[1].split("\n## ", 1)[0]
+    assert 'Every entity of a hub shows "Unavailable"' in trouble
+    limits = README.split("## Known limitations", 1)[1].split("\n## ", 1)[0]
+    assert "not verified on hardware" in limits and "`stat`" in limits

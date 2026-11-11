@@ -148,7 +148,7 @@ def _event(device, idx):
 ])
 def test_press_release_buttons(val, expected):
     entity = _event(MC_ND2, "B1")
-    entity._handle_value(val)
+    entity._handle_state_value(val)
     assert entity.last_event == expected
 
 
@@ -159,14 +159,14 @@ def test_press_release_buttons(val, expected):
 ])
 def test_clicker_v2_gestures(val, expected):
     entity = _event(CLICKER_V2, "BN")
-    entity._handle_value(val)
+    entity._handle_state_value(val)
     assert entity.last_event == expected
 
 
 def test_unknown_button_value_fires_nothing():
     entity = _event(CLICKER_V2, "BN")
-    entity._handle_value(0)   # v2 sends no release
-    entity._handle_value("x")
+    entity._handle_state_value(0)   # v2 sends no release
+    entity._handle_state_value("x")
     assert not hasattr(entity, "last_event")
 
 

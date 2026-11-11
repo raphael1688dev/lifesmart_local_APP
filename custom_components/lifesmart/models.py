@@ -15,6 +15,7 @@ from typing import Any, Callable, Dict, List, Set
 from homeassistant.config_entries import ConfigEntry
 
 from .api import LifeSmartAPI
+from .availability import HubAvailability
 from .coordinator import LifeSmartCoordinator, LifeSmartHubCoordinator
 
 
@@ -36,6 +37,8 @@ class LifeSmartData:
     hub_device_id: str
     # LI §3.3.5 scene list, read once at setup.
     scenes: List[Dict[str, Any]]
+    # Whether the hub is answering; every entity's `available` follows it.
+    availability: HubAvailability
     # Called on unload, in order.
     unsubs: List[Callable[[], None]] = field(default_factory=list)
     # IR remotes this hub has; `send_keys` uses it to pick the hub (R30).

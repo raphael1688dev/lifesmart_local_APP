@@ -14,7 +14,9 @@ from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.event import async_call_later
 
-from .device_info import hub_device_info, hub_key_slug
+from .availability import HubAvailability
+from .device_info import hub_key_slug
+from .entity import LifeSmartHubEntity
 from .models import LifeSmartConfigEntry
 
 _LOGGER = logging.getLogger(__name__)
@@ -47,12 +49,13 @@ async def async_setup_entry(
         LifeSmartHubRebootButton(
             api=api, hub_key=hub_key, hub_info=hub_info, title=title,
             entry_id=config_entry.entry_id,
+            availability=runtime.availability,
         ),
     ]
     async_add_entities(buttons)
 
 
-class LifeSmartHubRebootButton(ButtonEntity):
+class LifeSmartHubRebootButton(LifeSmartHubEntity, ButtonEntity):
     """Restart the hub via LI §3.3.10 cfg:reboot.
 
     The hub ACKs the command and then restarts immediately — no spec-level
@@ -60,10 +63,8 @@ class LifeSmartHubRebootButton(ButtonEntity):
     prompt in the UI, which is the only safeguard.
     """
 
-    _attr_should_poll = False
     _attr_device_class = ButtonDeviceClass.RESTART
     _attr_entity_category = EntityCategory.CONFIG
-    _attr_has_entity_name = True  # R18: "Reboot" + hub device name
 
     def __init__(
         self,
@@ -72,7 +73,11 @@ class LifeSmartHubRebootButton(ButtonEntity):
         hub_info: Dict[str, Any],
         title: str,
         entry_id: str,
+        availability: Optional[HubAvailability] = None,
     ) -> None:
+        # R19: one hub DeviceInfo for the registry call, the hub sensors and
+        # this button (device_info.py, through LifeSmartHubEntity).
+        super().__init__(hub_key, title, hub_info, availability)
         self._api = api
         self._entry_id = entry_id
         self._cancel_reload: Optional[Callable[[], None]] = None
@@ -83,24 +88,11 @@ class LifeSmartHubRebootButton(ButtonEntity):
         # Hand-written entity_id per CLAUDE.md "Hub-level entity 組織慣例".
         self.entity_id = "button.lifesmart_hub_reboot"
 
-        # R19: same kwargs as __init__.py's registry call and sensor.py, built
-        # by device_info.py (R17 omit-unknown sw_version and R18 str() live
-        # there) — no item assignment, DeviceInfo is a dataclass from 2026.11.
-        self._attr_device_info = hub_device_info(hub_key, title, hub_info)
-
-    async def async_will_remove_from_hass(self) -> None:
+    def _cleanup(self) -> None:
         # An unload before the timer fires must not reload the entry again.
         if self._cancel_reload is not None:
             self._cancel_reload()
             self._cancel_reload = None
-
-    @callback
-    def async_entity_id_changed(self, old_entity_id: str) -> None:
-        """Opt in to in-place entity_id renames (HA 2026.11+, R19).
-
-        The reload timer is not keyed on the entity_id; nothing to re-key.
-        """
-        super().async_entity_id_changed(old_entity_id)
 
     async def async_press(self) -> None:
         """Send cfg:reboot. Hub will ack then restart immediately."""

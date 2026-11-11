@@ -14,12 +14,14 @@ platforms.
 import asyncio
 import logging
 import re
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Optional
 
 from homeassistant.components.scene import Scene
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
+from .availability import HubAvailability
+from .entity import LifeSmartEntity
 from .models import LifeSmartConfigEntry
 
 _LOGGER = logging.getLogger(__name__)
@@ -50,7 +52,7 @@ async def async_setup_entry(
     api = runtime.api
 
     scenes: List[Scene] = [
-        LifeSmartScene(api=api, scene=item)
+        LifeSmartScene(api=api, scene=item, availability=runtime.availability)
         for item in runtime.scenes
         if item.get("cls") in TRIGGER_ONLY_CLASSES
     ]
@@ -58,7 +60,7 @@ async def async_setup_entry(
     async_add_entities(scenes)
 
 
-class LifeSmartScene(Scene):
+class LifeSmartScene(LifeSmartEntity, Scene):
     """A single LifeSmart hub scene, identified by an AI... id.
 
     Scenes are NOT mounted on the hub DeviceInfo — HA's Scene platform
@@ -66,11 +68,15 @@ class LifeSmartScene(Scene):
     to a device anyway; they're hub-level orchestration).
     """
 
-    # R32: HA quality scale `has-entity-name`. A scene has no device, so HA
-    # uses the name as it is — nothing changes on screen.
-    _attr_has_entity_name = True
+    # R32: `has_entity_name` comes from the base class (quality scale
+    # `has-entity-name`). A scene has no device, so HA uses the name as it
+    # is. The base also makes it unavailable while the hub is not answering.
 
-    def __init__(self, api: Any, scene: Dict[str, Any]) -> None:
+    def __init__(
+        self, api: Any, scene: Dict[str, Any],
+        availability: Optional[HubAvailability] = None,
+    ) -> None:
+        super().__init__(availability)
         self._api = api
         self._scene_id: str = scene["id"]
 

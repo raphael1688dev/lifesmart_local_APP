@@ -9,10 +9,11 @@ from homeassistant.components import remote
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
-from homeassistant.helpers.entity import DeviceInfo
 
 from .const import DOMAIN
-from .device_info import sub_device_info
+from .availability import HubAvailability
+from .coordinator import LifeSmartCoordinator
+from .entity import LifeSmartDeviceEntity
 from .models import LifeSmartConfigEntry
 
 _LOGGER = logging.getLogger(__name__)
@@ -117,18 +118,18 @@ async def async_setup_entry(
                     remote_data_list=data["remotes"],
                     name=data["device"].get("name", "Remote"),
                     hub_device_id=hub_device_id,
+                    coordinator=runtime.coordinator,
+                    availability=runtime.availability,
                 )
             )
     
     async_add_entities(remotes)
 
-class LifeSmartRemote(remote.RemoteEntity):
+class LifeSmartRemote(LifeSmartDeviceEntity, remote.RemoteEntity):
     """LifeSmart Remote Entity."""
-    _attr_should_poll = False
     # R18: HA 2026.5 naming. The remote IS the device, so the entity has no
     # name of its own and HA shows the device name. Before R18 `_attr_name`
     # (and a `name` property override) duplicated the device name.
-    _attr_has_entity_name = True
     _attr_name = None
 
     def __init__(
@@ -138,15 +139,23 @@ class LifeSmartRemote(remote.RemoteEntity):
         remote_data_list: List[Dict[str, Any]],
         name: str,
         hub_device_id: Optional[str] = None,
+        coordinator: Optional[LifeSmartCoordinator] = None,
+        availability: Optional[HubAvailability] = None,
     ):
-        """Initialize the remote."""
-        self._api = api
-        self._device = device
-        self._hub_device_id = hub_device_id
+        """Initialize the remote.
 
-        self._remote_data_list = remote_data_list
+        R32: lifecycle and availability are in entity.py. The coordinator is
+        only the fallback for the device's `stat`.
+        """
         # `name` is kept as the slug / log fallback only (R18) — see class note.
         self._device_name = device.get("name") or name or "Remote"
+        super().__init__(
+            api, device, None,
+            hub_device_id=hub_device_id, coordinator=coordinator,
+            availability=availability, device_name=self._device_name,
+        )
+
+        self._remote_data_list = remote_data_list
         device_id = device["me"]
         agt = device.get("agt", "")
         # Include agt (R10) — `me` collides across hubs on system devices.
@@ -155,14 +164,11 @@ class LifeSmartRemote(remote.RemoteEntity):
         # R10-b: entity_id also needs agt for the same reason as unique_id.
         # R16: slugify the whole object id so a '-' in agt can't leak in.
         self.entity_id = f"remote.{_slugify(f'{base}_{agt}_{device_id}')}"
-        self._available = True
-
 
         self._all_keys = {}
         self._remote_details = {}
         self._refresh_lock = asyncio.Lock()
         self._last_refresh = 0.0
-        self._failures = 0
 
         for remote_data in remote_data_list:
             remote_id = remote_data["remote"]["id"]
@@ -216,25 +222,9 @@ class LifeSmartRemote(remote.RemoteEntity):
                 self._last_refresh = time.monotonic()
 
     @property
-    def available(self) -> bool:
-        """Return True if entity is available."""
-        return self._available
-
-    @property
     def supported_features(self) -> int:
         """Return the list of supported features."""
         return remote.RemoteEntityFeature.ACTIVITY
-
-    @property
-    def device_info(self) -> DeviceInfo:
-        """Return device info.
-
-        R19: built in one go by device_info.py — DeviceInfo is a dataclass
-        from HA 2026.11, so no item assignment. via_device_id (D22) there.
-        """
-        return sub_device_info(
-            self._device, self._hub_device_id, name=self._device_name
-        )
 
     @property
     def extra_state_attributes(self) -> Dict[str, Any]:
@@ -263,18 +253,15 @@ class LifeSmartRemote(remote.RemoteEntity):
                 if remote_id not in self._remote_details:
                     await self._async_refresh_data(force=True)
                 if remote_id in self._remote_details and key in self._remote_details[remote_id]["keys"]:
-                    for attempt in range(3):
+                    for _attempt in range(3):
                         try:
                             await self._api.send_remote_key(remote_id, key)
-                            self._available = True
-                            self._failures = 0
                             break
                         except asyncio.TimeoutError:
-                            self._failures += 1
-                            if self._failures >= 3:
-                                self._available = False
-                            if attempt == 2:
-                                break
+                            # Tried up to three times. R32: a failed send no longer
+                            # makes the remote unavailable; that follows the hub
+                            # (availability.py) and the device's `stat`.
+                            continue
                         except (OSError, KeyError, ValueError, TypeError) as ex:
                             _LOGGER.error("Unexpected error sending command %s to remote %s: %s", key, remote_id, type(ex).__name__)
                             break
@@ -283,18 +270,15 @@ class LifeSmartRemote(remote.RemoteEntity):
                     await self._async_refresh_data(force=True)
                 remote_id = self._all_keys.get(cmd)
                 if remote_id:
-                    for attempt in range(3):
+                    for _attempt in range(3):
                         try:
                             await self._api.send_remote_key(remote_id, cmd)
-                            self._available = True
-                            self._failures = 0
                             break
                         except asyncio.TimeoutError:
-                            self._failures += 1
-                            if self._failures >= 3:
-                                self._available = False
-                            if attempt == 2:
-                                break
+                            # Tried up to three times. R32: a failed send no longer
+                            # makes the remote unavailable; that follows the hub
+                            # (availability.py) and the device's `stat`.
+                            continue
                         except (OSError, KeyError, ValueError, TypeError) as ex:
                             _LOGGER.error("Error sending command %s to remote %s: %s", cmd, remote_id, type(ex).__name__)
                             break

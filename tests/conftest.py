@@ -201,6 +201,26 @@ def _install_ha_stubs() -> None:
             super().__init__(**kw)
 
     ent.DeviceInfo = _DeviceInfo
+
+    # R32: entity.py derives every entity from this. Like HA's: `hass` is
+    # None until the entity is added, and the lifecycle methods exist so
+    # subclasses can chain to them. State writes are counted for the tests.
+    class _Entity:
+        hass = None
+
+        async def async_added_to_hass(self) -> None:
+            pass
+
+        async def async_will_remove_from_hass(self) -> None:
+            pass
+
+        def async_entity_id_changed(self, old_entity_id: str) -> None:
+            pass
+
+        def async_write_ha_state(self) -> None:
+            self.state_writes = getattr(self, "state_writes", 0) + 1
+
+    ent.Entity = _Entity
     ent.EntityCategory = _AnyEnum  # R19: sensor.py imports it from here
     sys.modules["homeassistant.helpers.entity"] = ent
 

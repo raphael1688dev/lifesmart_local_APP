@@ -96,6 +96,7 @@ Sub-device entity IDs follow `<platform>.<devtype>_<agt>_<me>_<channel>`, all lo
 - **Push.** The hub sends a message to Home Assistant whenever a device changes, so switches, curtains, buttons and connectivity update at once. The integration renews this subscription every 90 seconds; the hub drops it after 300 seconds without renewal.
 - **Fallback poll.** Every 15 minutes the integration asks the hub for the full device list, in one request, in case a push message was lost. Sensors, connectivity and curtains follow it.
 - **Hub information.** Firmware, OS, model and time zone are read at startup and once a day.
+- **Unavailable.** Entities show *Unavailable* instead of their last value in two cases. When the hub misses two renewals in a row (about three minutes at most), all of that hub's entities are unavailable until it answers again, which is noticed within 90 seconds; each change is written to the log once. When the hub reports one device as offline, that device's entities are unavailable, except its Connectivity sensor, which shows *Disconnected*.
 - **Read once.** The device list, IR remotes and scenes are read when the integration starts. A device paired or removed later triggers a reload; a new scene or IR remote needs a reload from the integration's menu.
 
 ## Examples
@@ -178,6 +179,8 @@ Nothing is changed on the hub. It stops sending events to Home Assistant within 
 - **Clock difference too large (code 101).** The integration corrects small offsets itself. If the error persists, sync the Home Assistant host's clock with NTP.
 - **No devices found on the hub.** The hub answered but reported no sub-devices. Check the model/token pair matches the one in the app's OpenDev template.
 - **Integration shows "Retrying setup".** The hub did not answer at startup. Home Assistant retries on its own; check power and network.
+- **Every entity of a hub shows "Unavailable".** The hub stopped answering. Check power and network; the entities return by themselves within 90 seconds of the hub answering. The log has one line for when it stopped and one for when it came back.
+- **One device's entities show "Unavailable".** The hub reports that device as offline (its Connectivity sensor shows *Disconnected*). Check the device's power or battery and its distance from the hub. If the device works in the LifeSmart app while Home Assistant shows it unavailable, please open an issue with the diagnostics file.
 - **Repairs: "LifeSmart hub is unreachable".** The hub has not answered for 5 minutes or more while Home Assistant was running. Check power and network. The notice disappears by itself once the hub answers again.
 - **Repairs: "Cannot read hub firmware version".** The hub sensors keep the last values read, or stay empty if none were. Everything else keeps working. The integration tries again once a day.
 - **A newly paired device does not appear.** The integration reloads about 10 seconds after the hub reports a paired or removed device. If the device still does not appear, reload the integration from its menu.
@@ -196,6 +199,7 @@ Nothing is changed on the hub. It stops sending events to Home Assistant within 
 - The scene trigger parameters follow the spec's example and have not been tested on every scene type.
 - Scenes, group scenes, button events, and the rename, upgrade and factory-reset actions were written from the spec and have not been run against a real hub. `set_hub_timezone` has: it works on a Smart Station and a DEFED hub (firmware 1.0.94p10) from `20261110r1`. Up to `20261110r0` the request signature was built wrongly for scene triggers, for `set_hub_timezone`, and for `upgrade_hub_firmware` with `reboot`, so those very likely failed. The spec does not say how a scene trigger is signed; if one fails, please open an issue with the diagnostics file.
 - The spec gives no example of the hub's "device paired" / "device removed" messages. The automatic reload follows the documented field names and has not been tested on hardware.
+- Marking a device's entities unavailable follows the spec's `stat` field (1 online, 0 offline). No device has been seen offline on the hubs this was tested with, so that path is not verified on hardware. Only an explicit 0 counts; a missing or unexpected value leaves the entities usable.
 - IR remotes are supported only through `SL_P_IR` (SPOT mini).
 
 ## Upgrades that changed entity IDs

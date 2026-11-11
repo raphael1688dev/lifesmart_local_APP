@@ -7,7 +7,8 @@ from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from .const import CMD_SET, CMD_GET
 from .coordinator import LifeSmartCoordinator
-from .device_info import sub_device_info
+from .availability import HubAvailability
+from .entity import LifeSmartDeviceEntity
 from . import generate_entity_id
 from .models import LifeSmartConfigEntry
 
@@ -56,6 +57,7 @@ async def async_setup_entry(
                         idx=device.get('idx', PORT_STATE),
                         hub_device_id=hub_device_id,
                         coordinator=coordinator,
+                        availability=runtime.availability,
                     )
                 )
     
@@ -63,13 +65,16 @@ async def async_setup_entry(
     async_add_entities(covers)
 
 
-class LifeSmartCover(CoverEntity):
-    """Representation of a LifeSmart cover."""
-    _attr_should_poll = False
+class LifeSmartCover(LifeSmartDeviceEntity, CoverEntity):
+    """Representation of a LifeSmart cover.
+
+    State comes from push on the state channel, one read when added, and the
+    coordinator's 15 min `eps` snapshot as the fallback (D15, R25). Lifecycle
+    and availability are in entity.py (R32).
+    """
+
     # R18: HA 2026.5 naming. The cover IS the device, so the entity carries
     # no name of its own (`_attr_name = None`) and HA shows the device name.
-    # Before R18 `_attr_name` duplicated the device name.
-    _attr_has_entity_name = True
     _attr_name = None
 
     def __init__(
@@ -79,23 +84,21 @@ class LifeSmartCover(CoverEntity):
         idx: Optional[str] = None,
         hub_device_id: Optional[str] = None,
         coordinator: Optional[LifeSmartCoordinator] = None,
+        availability: Optional[HubAvailability] = None,
     ):
-        self._api = api
-        self._device = device
-        self._coordinator = coordinator
-        self._unsub_coordinator = None
         device_name = device.get('name', 'MINS Curtain')
+        super().__init__(
+            api, device, idx or PORT_STATE,
+            hub_device_id=hub_device_id, coordinator=coordinator,
+            availability=availability, device_name=device_name, default_model="SL_P",
+        )
         # Include agt (R10) — `me` collides across hubs on system devices.
         self._attr_unique_id = f"cover_{device.get('agt', '')}_{device['me']}"
         self._attr_device_class = CoverDeviceClass.CURTAIN
-        
         # 支援開、關、停功能
         self._attr_supported_features = CoverEntityFeature.OPEN | CoverEntityFeature.CLOSE | CoverEntityFeature.STOP
-        
         self._attr_is_closed = None
-        self._idx = idx or PORT_STATE
-        self._unsub_report = None
-        
+
         device_type = device.get("devtype")
         hub_id = device.get("agt", "")
         device_id = device["me"]
@@ -103,46 +106,9 @@ class LifeSmartCover(CoverEntity):
 
         _LOGGER.debug("Initializing cover: %s (ID: %s)", device_name, self._attr_unique_id)
 
-        # R19: built in one go by device_info.py — DeviceInfo is a dataclass
-        # from HA 2026.11, so no item assignment. via_device_id (D22) there.
-        self._attr_device_info = sub_device_info(
-            device, hub_device_id, name=device_name, default_model="SL_P"
-        )
-
-    async def async_added_to_hass(self):
-        """實體加入 HA 時，註冊 UDP 推播監聽並獲取初始狀態"""
-        # 註冊對 P1 (狀態通道) 的監聽
-        self._unsub_report = self._api.register_state_listener(self._device["me"], self._idx, self._handle_state_value)
+    async def _async_initial_refresh(self) -> None:
+        """實體加入 HA 時獲取初始狀態（推播監聽由 entity.py 註冊）"""
         await self._async_update_state()
-        # D15 (R25): the cover only read its state once and then relied on
-        # push; a lost NOTIFY left it wrong until restart. The shared
-        # coordinator's 15 min `eps` snapshot is the fallback now.
-        if self._coordinator is not None:
-            self._unsub_coordinator = self._coordinator.async_add_listener(
-                self._handle_coordinator_update
-            )
-
-    async def async_will_remove_from_hass(self):
-        """實體移除時清理資源"""
-        if self._unsub_coordinator:
-            self._unsub_coordinator()
-            self._unsub_coordinator = None
-        if self._unsub_report:
-            self._unsub_report()
-            self._unsub_report = None
-
-    @callback
-    def async_entity_id_changed(self, old_entity_id: str) -> None:
-        """Opt in to in-place entity_id renames (HA 2026.11+, R19).
-
-        Nothing here is keyed on entity_id — the push listener keys on
-        (me, idx) and the coordinator listener on the method — so there is
-        nothing to re-key. Without this method HA
-        keeps removing and re-adding the
-        entity on rename (compat path, removed in 2027.11) because this class
-        defines async_added_to_hass / async_will_remove_from_hass.
-        """
-        super().async_entity_id_changed(old_entity_id)
 
     async def _async_update_state(self, *_):
         """獲取窗簾初始狀態"""
@@ -160,31 +126,28 @@ class LifeSmartCover(CoverEntity):
         except (asyncio.TimeoutError, OSError, KeyError, ValueError, TypeError) as ex:
             _LOGGER.error("Error updating cover state: %s", type(ex).__name__)
 
+    @callback
     def _handle_state_value(self, val: Any) -> None:
         """處理網關主動推播的 UDP 狀態"""
         self._update_internal_state(val)
 
-    @callback
-    def _handle_coordinator_update(self) -> None:
+    def _update_from_device(self, device: dict) -> bool:
         """D15: same channel as push (PORT_STATE, D1 unverified), from `eps`."""
-        if self._coordinator is None or self._coordinator.data is None:
-            return
-        device = self._coordinator.data.get(self._device["me"])
-        if not isinstance(device, dict):
-            return
         channel = device.get("data", {}).get(self._idx)
-        if isinstance(channel, dict):
-            self._update_internal_state(channel.get("v"))
+        return isinstance(channel, dict) and self._set_closed(channel.get("v"))
+
+    def _set_closed(self, val: Any) -> bool:
+        """Take a state-channel value. Return True if it was usable."""
+        if not isinstance(val, (int, float)):
+            return False
+        # 假設 val 為 0 代表全關，大於 0 代表有開啟 (依照一般 SL_P 行為，若不同可自行調整)
+        self._attr_is_closed = (val == 0)
+        return True
 
     def _update_internal_state(self, val: Any) -> None:
         """更新 HA 內部狀態"""
-        if not isinstance(val, (int, float)):
-            return
-        # 假設 val 為 0 代表全關，大於 0 代表有開啟 (依照一般 SL_P 行為，若不同可自行調整)
-        self._attr_is_closed = (val == 0)
-        
-        if self.hass:
-            self.async_write_ha_state()
+        if self._set_closed(val):
+            self._async_write_if_added()
 
     async def async_open_cover(self, **kwargs):
         """Open the cover."""

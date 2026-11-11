@@ -6,7 +6,7 @@ device-level `stat` common attribute (Local Interfaces §6.1 — `stat`: 1=onlin
 """
 import asyncio
 import logging
-from typing import Any, Callable, Dict, List, Optional
+from typing import Any, Dict, List, Optional
 
 from homeassistant.components.binary_sensor import (
     BinarySensorDeviceClass,
@@ -18,7 +18,8 @@ from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
 from . import generate_entity_id
 from .coordinator import LifeSmartCoordinator
-from .device_info import sub_device_info
+from .availability import HubAvailability
+from .entity import LifeSmartDeviceEntity
 from .models import LifeSmartConfigEntry
 
 _LOGGER = logging.getLogger(__name__)
@@ -41,6 +42,7 @@ async def async_setup_entry(
     coordinator = runtime.coordinator
     # D22: hub device registry ID — sub-devices hang off it via via_device_id.
     hub_device_id = runtime.hub_device_id
+    availability = runtime.availability
     devices = runtime.devices
     if not devices:
         try:
@@ -66,7 +68,7 @@ async def async_setup_entry(
                     binary_sensors.append(
                         LifeSmartConnectivitySensor(
                             api=api, device=device, hub_device_id=hub_device_id,
-                            coordinator=coordinator,
+                            coordinator=coordinator, availability=availability,
                         )
                     )
             except KeyError as e:
@@ -77,7 +79,7 @@ async def async_setup_entry(
     async_add_entities(binary_sensors)
 
 
-class LifeSmartConnectivitySensor(BinarySensorEntity):
+class LifeSmartConnectivitySensor(LifeSmartDeviceEntity, BinarySensorEntity):
     """Online/offline status of a LifeSmart sub-device.
 
     State sources:
@@ -87,17 +89,16 @@ class LifeSmartConnectivitySensor(BinarySensorEntity):
     2. Fallback: the shared LifeSmartCoordinator's 15 min `eps` snapshot,
        in case a push is lost. D15 (R25): it replaced a per-entity `ep` GET
        timer, so N connectivity sensors no longer cost N requests a cycle.
+
+    R32: the base class listens to `stat` for every sub-device entity and
+    turns the others unavailable while the device is offline. This one stays
+    available and shows "Disconnected": that is what it is for. It still goes
+    unavailable when the hub itself stops answering.
     """
 
-    _attr_should_poll = False
     _attr_device_class = BinarySensorDeviceClass.CONNECTIVITY
     _attr_entity_category = EntityCategory.DIAGNOSTIC
-    _attr_has_entity_name = True  # R18: "Connectivity" + device name
-
-    _api: Any
-    _device: Dict[str, Any]
-    _unsub_report: Optional[Callable[[], None]]
-    _unsub_coordinator: Optional[Callable[[], None]]
+    _follows_device_stat = False
 
     def __init__(
         self,
@@ -105,14 +106,14 @@ class LifeSmartConnectivitySensor(BinarySensorEntity):
         device: Dict[str, Any],
         hub_device_id: Optional[str] = None,
         coordinator: Optional[LifeSmartCoordinator] = None,
+        availability: Optional[HubAvailability] = None,
     ) -> None:
-        self._api = api
-        self._device = device
-        self._coordinator = coordinator
-        self._unsub_report = None
-        self._unsub_coordinator = None
-
         try:
+            super().__init__(
+                api, device, None,
+                hub_device_id=hub_device_id, coordinator=coordinator,
+                availability=availability,
+            )
             me = device['me']
             devtype = device.get('devtype')
             hub_id = device.get('agt', '')
@@ -127,66 +128,24 @@ class LifeSmartConnectivitySensor(BinarySensorEntity):
                 f"binary_sensor.{generate_entity_id(devtype, hub_id, me, 'connectivity')}"
             )
 
-            # R19: built in one go by device_info.py — DeviceInfo is a
-            # dataclass from HA 2026.11, so no item assignment. via_device_id
-            # (D22) handled there.
-            self._attr_device_info = sub_device_info(device, hub_device_id)
-
             stat = device.get("stat")
             self._attr_is_on = (stat == 1) if isinstance(stat, (int, float)) else None
         except KeyError as e:
             _LOGGER.error("Missing required connectivity sensor field: %s", e)
             raise
 
-    async def async_added_to_hass(self) -> None:
-        """Register the push listener and the coordinator fallback."""
-        # Push: api dispatches stat changes via virtual idx "stat".
-        self._unsub_report = self._api.register_state_listener(
-            self._device["me"], "stat", self._handle_stat_value
-        )
-        if self._coordinator is not None:
-            self._unsub_coordinator = self._coordinator.async_add_listener(
-                self._handle_coordinator_update
-            )
-
-    async def async_will_remove_from_hass(self) -> None:
-        if self._unsub_coordinator:
-            self._unsub_coordinator()
-            self._unsub_coordinator = None
-        if self._unsub_report:
-            self._unsub_report()
-            self._unsub_report = None
-
     @callback
-    def async_entity_id_changed(self, old_entity_id: str) -> None:
-        """Opt in to in-place entity_id renames (HA 2026.11+, R19).
-
-        Nothing here is keyed on entity_id — the push listener keys on
-        (me, "stat") and the coordinator listener on the method — so there is
-        nothing to re-key. Without this method HA keeps removing and re-adding the
-        entity on rename (compat path, removed in 2027.11) because this class
-        defines async_added_to_hass / async_will_remove_from_hass.
-        """
-        super().async_entity_id_changed(old_entity_id)
-
     def _handle_stat_value(self, val: Any) -> None:
+        """Pushed `stat` (LI §4 NOTIFY, dispatched as virtual idx "stat")."""
         if not isinstance(val, (int, float)):
             return
         self._attr_is_on = (val == 1)
-        if self.hass:
-            self.hass.async_create_task(self._async_write_state())
+        self._async_write_if_added()
 
-    async def _async_write_state(self) -> None:
-        self.async_write_ha_state()
-
-    @callback
-    def _handle_coordinator_update(self) -> None:
-        """D15: take `stat` from the coordinator's `eps` snapshot."""
-        if self._coordinator is None or self._coordinator.data is None:
-            return
-        device = self._coordinator.data.get(self._device["me"])
-        stat = device.get("stat") if isinstance(device, dict) else None
+    def _update_from_device(self, device: Dict[str, Any]) -> bool:
+        """D15: `stat` from the coordinator's `eps` snapshot."""
+        stat = device.get("stat")
         if not isinstance(stat, (int, float)):
-            return
+            return False
         self._attr_is_on = (stat == 1)
-        self.async_write_ha_state()
+        return True
