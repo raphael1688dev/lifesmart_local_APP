@@ -10,6 +10,9 @@ import pytest
 
 # Imported before the harness mounts its own `custom_components` package:
 # whichever is imported first is the one Home Assistant's loader scans.
+# This import is all it takes; custom_components/ needs no __init__.py
+# (one was added in 00a685e on that assumption and removed again: the suite
+# passes without it).
 from custom_components.lifesmart.api import LifeSmartAPI
 
 HOST = "192.168.1.50"
