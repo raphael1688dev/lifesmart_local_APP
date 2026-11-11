@@ -178,7 +178,7 @@ Nothing is changed on the hub. It stops sending events to Home Assistant within 
 
 - **Failed to connect to the hub.** Check the IP, that Home Assistant and the hub share a LAN segment, that UDP is not blocked, and that the OpenDev template is enabled in the LifeSmart app.
 - **Invalid token format.** The token must be 16–64 letters and digits, without spaces or symbols.
-- **The hub rejected this token (code 101).** The token is not the one set in the app's OpenDev template. The hub uses code 101 both for a clock that is more than five minutes off and for a wrong token; the integration takes the hub's time from that reply and asks again, so when this message appears the clock has been ruled out.
+- **The hub rejected this token (code 101).** The token is not the one set in the app's OpenDev template. The spec gives code 101 for a clock that is more than five minutes off; real hubs were seen to answer a wrong token with it too. The integration takes the hub's time from that reply and asks again, so when this message appears the clock has been ruled out.
 - **The hub rejected the request (code 101) and did not report its time.** The clock could not be corrected, so the cause is either the clock or the token. Check the token, and sync the Home Assistant host's clock with NTP. This reply has not been seen on a real hub.
 - **"Reauthentication required" on the integration.** The hub rejected the stored token, at startup or while running. Open the notice and enter the current token. While it is pending, the hub's entities are unavailable.
 - **No devices found on the hub.** The hub accepted the token but has no sub-devices paired. Pair a device in the LifeSmart app first.
