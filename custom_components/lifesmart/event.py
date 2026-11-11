@@ -32,6 +32,10 @@ from .device_info import sub_device_info
 
 _LOGGER = logging.getLogger(__name__)
 
+# Read-only platform fed by push and the shared coordinator: nothing to limit
+# (HA quality scale `parallel-updates`).
+PARALLEL_UPDATES = 0
+
 # ButtonEventType values (HA 2026.12 names in comments).
 PRESS_START = "press_start"            # PRESS_START: button went down
 PRESS_END = "press_end"                # PRESS_END: released, not a long press

@@ -22,6 +22,10 @@ from .device_info import hub_device_info, hub_key_slug, sub_device_info
 from . import generate_entity_id
 _LOGGER = logging.getLogger(__name__)
 
+# Read-only platform fed by push and the shared coordinator: nothing to limit
+# (HA quality scale `parallel-updates`).
+PARALLEL_UPDATES = 0
+
 UPDATE_INTERVAL_SECONDS = 900
 
 async def async_setup_entry(

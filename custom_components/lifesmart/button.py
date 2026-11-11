@@ -20,6 +20,12 @@ from .device_info import hub_device_info, hub_key_slug
 
 _LOGGER = logging.getLogger(__name__)
 
+# No limit on parallel action calls (HA quality scale `parallel-updates`): each
+# request is one UDP datagram matched to its reply by id, and the hub answers
+# in about 10 ms. A limit of 1 would make "turn off 19 switches" wait for each
+# switch's confirmation in turn.
+PARALLEL_UPDATES = 0
+
 # D5 (R25): after a reboot the hub may have new firmware or devices, so the
 # entry is reloaded. Two minutes covers a normal restart; if the hub is still
 # down, setup raises ConfigEntryNotReady and HA retries on its own.

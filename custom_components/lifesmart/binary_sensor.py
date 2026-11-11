@@ -24,6 +24,10 @@ from .device_info import sub_device_info
 
 _LOGGER = logging.getLogger(__name__)
 
+# Read-only platform fed by push and the shared coordinator: nothing to limit
+# (HA quality scale `parallel-updates`).
+PARALLEL_UPDATES = 0
+
 
 async def async_setup_entry(
     hass: HomeAssistant,

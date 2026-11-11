@@ -17,6 +17,12 @@ from .device_info import sub_device_info
 
 _LOGGER = logging.getLogger(__name__)
 
+# No limit on parallel action calls (HA quality scale `parallel-updates`): each
+# request is one UDP datagram matched to its reply by id, and the hub answers
+# in about 10 ms. A limit of 1 would make "turn off 19 switches" wait for each
+# switch's confirmation in turn.
+PARALLEL_UPDATES = 0
+
 SUPPORTED_REMOTE_TYPES = ["SL_P_IR"]
 
 def _normalize_devtype(devtype: Any) -> str:

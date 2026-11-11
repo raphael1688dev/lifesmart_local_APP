@@ -11,6 +11,12 @@ from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from .const import DOMAIN
 from .group_scene import LIGHT_GROUP_CLASSES, LifeSmartGroupScene, group_scenes
 
+# No limit on parallel action calls (HA quality scale `parallel-updates`): each
+# request is one UDP datagram matched to its reply by id, and the hub answers
+# in about 10 ms. A limit of 1 would make "turn off 19 switches" wait for each
+# switch's confirmation in turn.
+PARALLEL_UPDATES = 0
+
 
 async def async_setup_entry(
     hass: HomeAssistant,

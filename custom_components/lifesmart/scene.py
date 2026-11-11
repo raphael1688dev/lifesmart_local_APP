@@ -25,6 +25,12 @@ from .const import DOMAIN
 
 _LOGGER = logging.getLogger(__name__)
 
+# No limit on parallel action calls (HA quality scale `parallel-updates`): each
+# request is one UDP datagram matched to its reply by id, and the hub answers
+# in about 10 ms. A limit of 1 would make "turn off 19 switches" wait for each
+# switch's confirmation in turn.
+PARALLEL_UPDATES = 0
+
 # cls values from LI §5.2 that map cleanly to HA Scene (pure triggers).
 TRIGGER_ONLY_CLASSES = {"scene", "groupirc"}
 
@@ -60,6 +66,10 @@ class LifeSmartScene(Scene):
     convention is to not attach to a device (LI scenes don't really belong
     to a device anyway; they're hub-level orchestration).
     """
+
+    # R32: HA quality scale `has-entity-name`. A scene has no device, so HA
+    # uses the name as it is — nothing changes on screen.
+    _attr_has_entity_name = True
 
     def __init__(self, api: Any, scene: Dict[str, Any]) -> None:
         self._api = api

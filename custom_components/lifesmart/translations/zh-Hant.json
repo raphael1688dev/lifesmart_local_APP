@@ -8,6 +8,11 @@
                     "host": "IP 位址",
                     "model": "OpenDev 型號",
                     "token": "Token"
+                },
+                "data_description": {
+                    "host": "中樞在區域網路上的位址，可以是 IP 或主機名稱。",
+                    "model": "LifeSmart 與 token 一起核發的 OpenDev model 字串，例如 OD_XXX_XXX。這不是印在中樞上的型號。",
+                    "token": "與該 model 配對的 OpenDev token，16 到 64 個英數字。"
                 }
             },
             "reconfigure": {
@@ -17,6 +22,11 @@
                     "host": "IP 位址",
                     "model": "OpenDev 型號",
                     "token": "Token"
+                },
+                "data_description": {
+                    "host": "中樞在區域網路上的位址，可以是 IP 或主機名稱。",
+                    "model": "LifeSmart 與 token 一起核發的 OpenDev model 字串，例如 OD_XXX_XXX。這不是印在中樞上的型號。",
+                    "token": "與該 model 配對的 OpenDev token，16 到 64 個英數字。"
                 }
             }
         },

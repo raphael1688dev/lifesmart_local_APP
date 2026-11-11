@@ -13,6 +13,12 @@ from . import generate_entity_id
 
 _LOGGER = logging.getLogger(__name__)
 
+# No limit on parallel action calls (HA quality scale `parallel-updates`): each
+# request is one UDP datagram matched to its reply by id, and the hub answers
+# in about 10 ms. A limit of 1 would make "turn off 19 switches" wait for each
+# switch's confirmation in turn.
+PARALLEL_UPDATES = 0
+
 PORT_1 = "P2" # 負責打開
 PORT_2 = "P3" # 負責關閉
 PORT_3 = "P4" # 負責停止

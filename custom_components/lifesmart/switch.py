@@ -2,7 +2,7 @@
 import asyncio
 import logging
 from typing import Optional
-from homeassistant.components.switch import SwitchEntity
+from homeassistant.components.switch import SwitchDeviceClass, SwitchEntity
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
@@ -13,6 +13,12 @@ from .group_scene import SWITCH_GROUP_CLASSES, LifeSmartGroupScene, group_scenes
 from . import generate_entity_id
 
 _LOGGER = logging.getLogger(__name__)
+
+# No limit on parallel action calls (HA quality scale `parallel-updates`): each
+# request is one UDP datagram matched to its reply by id, and the hub answers
+# in about 10 ms. A limit of 1 would make "turn off 19 switches" wait for each
+# switch's confirmation in turn.
+PARALLEL_UPDATES = 0
 
 VAL_TYPE_ON = 0x81
 VAL_TYPE_OFF = 0x80
@@ -93,9 +99,12 @@ async def async_setup_entry(
 class LifeSmartGroupSwitch(LifeSmartGroupScene, SwitchEntity):
     """A `groupsw` scene: a group of switches / bulbs, on or off."""
 
+    _attr_device_class = SwitchDeviceClass.SWITCH
+
 
 class LifeSmartSwitch(SwitchEntity):
     _attr_should_poll = False
+    _attr_device_class = SwitchDeviceClass.SWITCH  # R32: quality scale `entity-device-class`
     # R18: HA 2026.5 naming — `_attr_name` is the channel label only ("L1" or
     # the firmware-provided channel name); the frontend prepends the device name.
     _attr_has_entity_name = True

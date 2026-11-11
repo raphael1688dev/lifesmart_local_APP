@@ -1,6 +1,6 @@
 # Local LifeSmart for Home Assistant
 
-Control LifeSmart devices through your LifeSmart hub over the local network. The integration talks to the hub's local interface (OpenDev) over UDP. It needs no cloud account at runtime.
+Control [LifeSmart](https://ilifesmart.com) devices through your LifeSmart hub over the local network. The integration talks to the hub's local interface (OpenDev) over UDP. It needs no cloud account at runtime.
 
 ## Features
 
@@ -51,6 +51,13 @@ The model and token are issued by LifeSmart as a pair and must be used together 
 
 **Changing settings later:** open the integration's menu and choose **Reconfigure** to change the IP, model or token. Home Assistant reloads the integration afterwards.
 
+## Use cases
+
+- Keep LifeSmart switches and curtains working in Home Assistant when the internet or LifeSmart's cloud is down. Everything goes over your LAN.
+- Use LifeSmart wall switches, multi-control accessories and CUBE Clickers as triggers for anything else in Home Assistant, not only LifeSmart devices.
+- Get told before a battery-powered switch runs flat, or when a device drops off the hub, through the battery, signal and connectivity sensors.
+- Run the scenes you already built in the LifeSmart app from Home Assistant automations.
+
 ## Supported devices
 
 ### Sub-devices
@@ -84,6 +91,51 @@ The model and token are issued by LifeSmart as a pair and must be used together 
 
 Sub-device entity IDs follow `<platform>.<devtype>_<agt>_<me>_<channel>`, all lowercase. `agt` is the hub ID and `me` the device ID, so two hubs never collide. Remotes use `remote.<name>_<agt>_<me>`. Characters outside `a-z`, `0-9` and `_` become `_`.
 
+## How data is updated
+
+- **Push.** The hub sends a message to Home Assistant whenever a device changes, so switches, curtains, buttons and connectivity update at once. The integration renews this subscription every 90 seconds; the hub drops it after 300 seconds without renewal.
+- **Fallback poll.** Every 15 minutes the integration asks the hub for the full device list, in one request, in case a push message was lost. Sensors, connectivity and curtains follow it.
+- **Hub information.** Firmware, OS, model and time zone are read at startup and once a day.
+- **Read once.** The device list, IR remotes and scenes are read when the integration starts. A device paired or removed later triggers a reload; a new scene or IR remote needs a reload from the integration's menu.
+
+## Examples
+
+Tell me when a switch battery is low:
+
+```yaml
+automation:
+  - alias: "LifeSmart switch battery low"
+    triggers:
+      - trigger: numeric_state
+        entity_id: sensor.sl_sw_nd3_xxxx_7d01_v
+        below: 20
+    actions:
+      - action: notify.persistent_notification
+        data:
+          message: "The hallway switch battery is at {{ trigger.to_state.state }}%."
+```
+
+Toggle a light on a double press of a CUBE Clicker (new version). Button events have not been tested on a real device yet:
+
+```yaml
+automation:
+  - alias: "Clicker double press"
+    triggers:
+      - trigger: state
+        entity_id: event.sl_sc_bb_v2_xxxx_2722_bn
+    conditions:
+      - condition: state
+        entity_id: event.sl_sc_bb_v2_xxxx_2722_bn
+        attribute: event_type
+        state: multi_press
+    actions:
+      - action: light.toggle
+        target:
+          entity_id: light.living_room
+```
+
+Replace the entity IDs with your own; see [Entity IDs](#entity-ids).
+
 ## Sending IR commands
 
 Use `remote.send_command` on the remote entity with one or more key names. The entity's `all_commands` attribute lists the available keys. When two IR remotes on the same SPOT share a key name, address one directly as `<remote_id>::<key>`; the IDs are in the `remotes` attribute.
@@ -110,6 +162,14 @@ Each action takes the hub's integration entry (`config_entry_id`), so several hu
 | `lifesmart.rename_device` | Sets the name the hub stores for one of its devices (`device_id`), or for the hub itself when no device is given. The integration reloads afterwards so a renamed device shows its new name. A renamed hub looks the same in Home Assistant, because the hub device there is named after the integration entry; the new name shows in the LifeSmart app. |
 | `lifesmart.upgrade_hub_firmware` | Downloads the latest official firmware from LifeSmart's server to the hub. It takes effect after the hub restarts; set `reboot` to restart as soon as the download finishes. |
 | `lifesmart.factory_reset_hub` | Restores the hub's factory settings and restarts it. Requires `confirm: true`. This cannot be undone. |
+
+## Removing the integration
+
+1. Go to **Settings → Devices & services → Local LifeSmart**.
+2. On each hub entry, open the **⋮** menu and choose **Delete**. Its devices, entities and Repairs notices go with it.
+3. To remove the code as well, open HACS, find **Local LifeSmart**, and choose **Remove**. Restart Home Assistant.
+
+Nothing is changed on the hub. It stops sending events to Home Assistant within 5 minutes, when the subscription expires. The OpenDev template you created in the LifeSmart app is not touched.
 
 ## Troubleshooting
 

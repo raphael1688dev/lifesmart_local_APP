@@ -8,6 +8,11 @@
                     "host": "IP Address",
                     "model": "OpenDev Model",
                     "token": "Token"
+                },
+                "data_description": {
+                    "host": "The hub's address on your network: an IP address or a hostname.",
+                    "model": "The OpenDev model string LifeSmart issued together with your token, for example OD_XXX_XXX. This is not the model printed on the hub.",
+                    "token": "The OpenDev token that belongs to that model. 16 to 64 letters and digits."
                 }
             },
             "reconfigure": {
@@ -17,6 +22,11 @@
                     "host": "IP Address",
                     "model": "OpenDev Model",
                     "token": "Token"
+                },
+                "data_description": {
+                    "host": "The hub's address on your network: an IP address or a hostname.",
+                    "model": "The OpenDev model string LifeSmart issued together with your token, for example OD_XXX_XXX. This is not the model printed on the hub.",
+                    "token": "The OpenDev token that belongs to that model. 16 to 64 letters and digits."
                 }
             }
         },
