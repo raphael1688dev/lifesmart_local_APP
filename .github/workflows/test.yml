@@ -42,6 +42,30 @@ jobs:
         # the run, as it does locally (R30).
         run: pytest tests/ -v -W error
 
+  pytest-ha:
+    name: config flow under Home Assistant
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.14"
+
+      - name: Install the Home Assistant test harness
+        # R33: tests_ha/ drives the config flow through Home Assistant's own
+        # flow manager (quality scale `config-flow-test-coverage`). The
+        # harness brings the Home Assistant release it was built for; it is
+        # pinned so a new harness cannot change what this job tests without
+        # a commit. 0.13.375 = Home Assistant 2026.10.4 (see tests_ha/).
+        run: pip install --upgrade pip "pytest-homeassistant-custom-component==0.13.375" pytest-cov
+
+      - name: Run the config flow tests, 100 % line coverage required
+        run: >
+          python -m pytest tests_ha -v -o asyncio_mode=auto
+          --cov=custom_components.lifesmart.config_flow
+          --cov-report=term-missing --cov-fail-under=100
+
   compile:
     name: py_compile (full integration)
     runs-on: ubuntu-latest
@@ -55,7 +79,7 @@ jobs:
       - name: Syntax check every .py
         # Catches "manifest.json is fine but a sibling .py won't import"
         # regressions before they hit a user's Home Assistant log.
-        run: python -m compileall -q custom_components/lifesmart/ tests/
+        run: python -m compileall -q custom_components/ tests/ tests_ha/
 
   json-valid:
     name: JSON manifest + translations valid

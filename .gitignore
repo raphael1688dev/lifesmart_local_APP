@@ -6,8 +6,10 @@ __pycache__/
 *.py[cod]
 *$py.class
 
-# Test runner cache
+# Test runner cache and coverage data
 .pytest_cache/
+.coverage
+htmlcov/
 
 # Virtual environments / local Python installs
 .venv/

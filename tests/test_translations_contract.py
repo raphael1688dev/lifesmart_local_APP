@@ -107,3 +107,41 @@ def test_manifest_declares_integration_type():
     manifest = json.loads((PKG / "manifest.json").read_text())
     assert manifest["integration_type"] == "hub"
 
+
+
+# --- config flow messages (R33) -------------------------------------------------
+
+def _flow_error_keys_in_code():
+    """Every error key config_flow.py can put on a form."""
+    import ast
+    tree = ast.parse((PKG / "config_flow.py").read_text())
+    keys = set()
+    for node in ast.walk(tree):
+        if (
+            isinstance(node, ast.Assign)
+            and isinstance(node.targets[0], ast.Subscript)
+            and isinstance(node.targets[0].value, ast.Name)
+            and node.targets[0].value.id == "errors"
+            and isinstance(node.value, ast.Constant)
+        ):
+            keys.add(node.value.value)
+    return keys
+
+
+@pytest.mark.parametrize("lang", LANGS)
+def test_config_flow_errors_match_the_translations(lang):
+    """Both ways: a message for every error the flow shows, and no message
+    the flow cannot show. `invalid_model` and `invalid_config` sat here
+    unused since 2026-05; Home Assistant's test harness does not check
+    custom integrations' translations, so this does."""
+    used = _flow_error_keys_in_code()
+    assert used == {"invalid_host", "invalid_token", "cannot_connect", "clock_skew", "no_devices"}
+    assert set(_load(lang)["config"]["error"]) == used
+
+
+@pytest.mark.parametrize("lang", LANGS)
+def test_config_flow_abort_reasons(lang):
+    """`already_configured` comes from Home Assistant's duplicate check and
+    is not among the reasons it translates itself (2026.10+), so it stays
+    here. `reconfigure_successful` is translated by Home Assistant."""
+    assert set(_load(lang)["config"]["abort"]) == {"already_configured"}

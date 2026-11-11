@@ -32,12 +32,10 @@
         },
         "error": {
             "invalid_host": "IP 地址或主机名格式错误",
-            "invalid_model": "OpenDev 型号无效",
             "invalid_token": "Token 格式错误",
             "cannot_connect": "无法连接到中枢",
             "clock_skew": "中枢拒绝请求（代码 101）：时钟差异过大。自动校正失败 — 请通过 NTP 同步 HA 主机时间。",
-            "no_devices": "中枢上未找到任何设备",
-            "invalid_config": "配置无效"
+            "no_devices": "中枢上未找到任何设备"
         },
         "abort": {
             "already_configured": "设备已配置"

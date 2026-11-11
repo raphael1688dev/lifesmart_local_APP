@@ -32,12 +32,10 @@
         },
         "error": {
             "invalid_host": "IP 位址或主機名稱格式錯誤",
-            "invalid_model": "OpenDev 型號無效",
             "invalid_token": "Token 格式錯誤",
             "cannot_connect": "無法連線至中樞",
             "clock_skew": "中樞拒絕請求（代碼 101）：時鐘差異過大。自動校正失敗 — 請以 NTP 同步 HA 主機時間。",
-            "no_devices": "中樞上找不到任何裝置",
-            "invalid_config": "設定無效"
+            "no_devices": "中樞上找不到任何裝置"
         },
         "abort": {
             "already_configured": "裝置已設定過"

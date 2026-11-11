@@ -223,10 +223,22 @@ Release notes for every version are on the [Releases page](https://github.com/ra
 
 Issues and pull requests are welcome at <https://github.com/raphael1688dev/lifesmart_local_APP>.
 
-Tests need only pytest; Home Assistant is stubbed. CI runs them on Python 3.14, which is what Home Assistant requires.
+There are two test suites, run separately. CI runs both on Python 3.14, which is what Home Assistant requires.
+
+`tests/` needs only pytest; Home Assistant is stubbed, so it runs in a second:
 
 ```bash
 python3.14 -m venv .venv && .venv/bin/pip install pytest && .venv/bin/pytest tests/
+```
+
+`tests_ha/` drives the config flow through a real Home Assistant, using [pytest-homeassistant-custom-component](https://github.com/MatthewFlamm/pytest-homeassistant-custom-component). CI fails if any line of `config_flow.py` is not covered. The harness installs the Home Assistant version it was built for, which can be older than this integration's minimum; `tests_ha/__init__.py` says which.
+
+```bash
+python3.14 -m venv .venv-ha && .venv-ha/bin/pip install pytest-homeassistant-custom-component pytest-cov
+```
+
+```bash
+.venv-ha/bin/python -m pytest tests_ha -o asyncio_mode=auto --cov=custom_components.lifesmart.config_flow --cov-fail-under=100
 ```
 
 ## License
