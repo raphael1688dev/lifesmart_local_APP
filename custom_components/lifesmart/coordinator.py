@@ -18,13 +18,16 @@ from __future__ import annotations
 import asyncio
 import logging
 from datetime import timedelta
-from typing import Any, Dict, Optional
+from typing import TYPE_CHECKING, Any, Dict, Optional
 
-from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
 
 from .api import LifeSmartAPI
+
+if TYPE_CHECKING:
+    # models.py imports this module for the dataclass fields.
+    from .models import LifeSmartConfigEntry
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -37,7 +40,7 @@ class LifeSmartCoordinator(DataUpdateCoordinator[Dict[str, Dict[str, Any]]]):
     """Per-hub coordinator. Data shape: {me: device_dict} after each refresh."""
 
     def __init__(
-        self, hass: HomeAssistant, entry: ConfigEntry, api: LifeSmartAPI, host: str
+        self, hass: HomeAssistant, entry: LifeSmartConfigEntry, api: LifeSmartAPI, host: str
     ) -> None:
         # R30: the config entry is passed explicitly. Without it the
         # coordinator falls back to a ContextVar, which HA reports as an
@@ -128,7 +131,7 @@ class LifeSmartHubCoordinator(DataUpdateCoordinator[Dict[str, Any]]):
     """
 
     def __init__(
-        self, hass: HomeAssistant, entry: ConfigEntry, api: LifeSmartAPI, host: str
+        self, hass: HomeAssistant, entry: LifeSmartConfigEntry, api: LifeSmartAPI, host: str
     ) -> None:
         super().__init__(
             hass,

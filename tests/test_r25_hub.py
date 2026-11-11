@@ -12,7 +12,7 @@ from lifesmart.const import DOMAIN
 from lifesmart.coordinator import parse_hub_version, parse_timezone
 from lifesmart.sensor import LifeSmartHubInfoSensor
 
-from .fakes import AGT, HOST, HUB_REGISTRY_ID, FakeAPI, FakeTimers, entry_data, make_env, setup
+from .fakes import AGT, HOST, HUB_REGISTRY_ID, FakeAPI, FakeTimers, runtime, make_env, setup
 
 ServiceValidationError = lifesmart.ServiceValidationError
 HomeAssistantError = lifesmart.HomeAssistantError
@@ -51,8 +51,8 @@ def test_host_keyed_hub_device_moves_to_the_hub_id(env):
     env.ent_reg.add("sensor.other", "hub_firmware_192_168_1_50", "other-entry")
     setup(env)
     assert env.dev_reg.devices["existing-hub"].identifiers == {(DOMAIN, f"hub_{AGT}")}
-    assert entry_data(env)["hub_device_id"] == "existing-hub"
-    assert entry_data(env)["hub_key"] == AGT
+    assert runtime(env).hub_device_id == "existing-hub"
+    assert runtime(env).hub_key == AGT
     uids = {e.entity_id: e.unique_id for e in env.ent_reg.entities.values()}
     assert uids == {
         "sensor.lifesmart_hub_firmware": f"hub_firmware_{AGT}",
@@ -90,8 +90,8 @@ def test_parse_timezone(msg, expected):
 
 def test_daily_refresh_updates_device_and_issue(env):
     setup(env)
-    data = entry_data(env)
-    coordinator = data["hub_coordinator"]
+    data = runtime(env)
+    coordinator = data.hub_coordinator
     api = env.apis[0]
     api.version_reply = {"code": 0, "msg": {"ver": "1.0.6", "osver": "4.9", "mgatype": "LSNAMIV3"}}
     coordinator.async_set_updated_data(asyncio.run(coordinator.async_fetch()))
@@ -100,13 +100,13 @@ def test_daily_refresh_updates_device_and_issue(env):
     assert env.dev_reg.updates[-1] == (
         HUB_REGISTRY_ID, {"model": "NatureMini Pro", "sw_version": "1.0.6"},
     )
-    assert data["hub_info"]["ver"] == "1.0.6"
+    assert data.hub_info["ver"] == "1.0.6"
     assert "hub_version_unknown_entry1" in env.issues.deleted
 
 
 def test_failed_refresh_keeps_last_values_and_raises_issue(env):
     setup(env)
-    coordinator = entry_data(env)["hub_coordinator"]
+    coordinator = runtime(env).hub_coordinator
     env.apis[0].version_reply = {"code": 1}
     info = asyncio.run(coordinator.async_fetch())
     assert info["ver"] == "1.0.5p3" and info["version_ok"] is False
@@ -178,7 +178,7 @@ def _call(env, service, **data):
 def test_set_hub_timezone_sends_and_refreshes(env):
     setup(env)
     refreshed: list = []
-    coordinator = entry_data(env)["hub_coordinator"]
+    coordinator = runtime(env).hub_coordinator
     coordinator.async_request_refresh = lambda: asyncio.sleep(0, refreshed.append(True))
     _call(env, "set_hub_timezone", timezone=-3, daylight_saving=True)
     assert env.apis[0].calls == [("set_hub_timezone", -3, True)]

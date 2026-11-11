@@ -22,7 +22,7 @@ from lifesmart.light import async_setup_entry as light_setup
 from lifesmart.sensor import async_setup_entry as sensor_setup
 from lifesmart.switch import SUPPORTED_SWITCH_TYPES, async_setup_entry as switch_setup
 
-from .fakes import AGT, HUB_REGISTRY_ID, DEVICES, FakeAPI, device_info, entry_data, make_env, setup
+from .fakes import AGT, HUB_REGISTRY_ID, DEVICES, FakeAPI, device_info, runtime, make_env, setup
 
 MC_ND2 = {"me": "2720", "agt": AGT, "name": "Remote", "devtype": "SL_MC_ND2", "stat": 1,
           "data": {"L1": {"v": 0}, "L2": {"v": 1}, "B1": {"v": 0}, "B2": {"v": 0}, "V": {"v": 77}}}

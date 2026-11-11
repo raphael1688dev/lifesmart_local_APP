@@ -32,9 +32,9 @@ SWITCH_GROUP_CLASSES = {"groupsw"}
 LIGHT_GROUP_CLASSES = {"grouphw", "grouprgbw"}
 
 
-def group_scenes(entry_data: Dict[str, Any], classes: set[str]) -> List[Dict[str, Any]]:
+def group_scenes(scenes: List[Dict[str, Any]], classes: set[str]) -> List[Dict[str, Any]]:
     """The hub scenes (read once in __init__.py) whose `cls` is in `classes`."""
-    return [s for s in entry_data.get("scenes") or [] if s.get("cls") in classes]
+    return [s for s in scenes if s.get("cls") in classes]
 
 
 class LifeSmartGroupScene:

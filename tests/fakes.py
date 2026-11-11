@@ -207,6 +207,13 @@ class FakeConfigEntries:
     def async_get_entry(self, entry_id: str):
         return self.entries.get(entry_id)
 
+    def async_loaded_entries(self, domain: str) -> list:
+        """As HA: the domain's entries whose state is LOADED."""
+        return [
+            e for e in self.entries.values()
+            if e.domain == domain and e.state == LOADED
+        ]
+
 
 class FakeServices:
     def __init__(self) -> None:
@@ -249,9 +256,19 @@ class FakeTimers:
             handle[1](None)
 
 
+LOADED = "loaded"
+NOT_LOADED = "not_loaded"
+
+
 class FakeEntry(SimpleNamespace):
     """Config entry stand-in. Background tasks are collected, not started:
-    `setup()` awaits them after async_setup_entry, as HA's loop would."""
+    `setup()` awaits them after async_setup_entry, as HA's loop would.
+
+    `state` and `runtime_data` follow HA: the integration sets
+    `runtime_data` during setup, HA marks the entry LOADED once
+    async_setup_entry returns, and after a successful unload HA deletes
+    `runtime_data` and marks it NOT_LOADED (see `setup()` / `unload()`).
+    """
 
     def async_create_background_task(self, hass, coro, name):
         self.background.append(coro)
@@ -297,7 +314,7 @@ def make_env(monkeypatch) -> SimpleNamespace:
     entry = FakeEntry(
         entry_id="entry1", title="Living room hub", version=2, domain=DOMAIN,
         data={"host": HOST, "token": "0123456789abcdef", "model": "OD_ALI_TECH"},
-        background=[],
+        background=[], state=NOT_LOADED, options={},
     )
     hass.config_entries.entries[entry.entry_id] = entry
     return SimpleNamespace(hass=hass, entry=entry, log=log, issues=issues, apis=apis,
@@ -313,14 +330,33 @@ def setup(env, run_background: bool = True) -> None:
     async def run() -> None:
         assert await lifesmart.async_setup(env.hass, {}) is True
         assert await lifesmart.async_setup_entry(env.hass, env.entry) is None
+        env.entry.state = LOADED
         if run_background:
             while env.entry.background:
                 await env.entry.background.pop(0)
     asyncio.run(run())
 
 
-def entry_data(env) -> dict:
-    return env.hass.data[DOMAIN]["entries"][env.entry.entry_id]
+def unload(env) -> None:
+    """async_unload_entry, then what HA does after it returns."""
+    asyncio.run(lifesmart.async_unload_entry(env.hass, env.entry))
+    del env.entry.runtime_data
+    env.entry.state = NOT_LOADED
+
+
+def runtime(env) -> Any:
+    """The entry's `runtime_data` (a LifeSmartData)."""
+    return env.entry.runtime_data
+
+
+def loaded_hub(env, entry_id: str, api: "FakeAPI", remote_ids=()) -> FakeEntry:
+    """Register one more loaded LifeSmart entry, for multi-hub action tests."""
+    entry = FakeEntry(
+        entry_id=entry_id, title=entry_id, domain=DOMAIN, state=LOADED, background=[],
+        runtime_data=SimpleNamespace(api=api, remote_ids=set(remote_ids)),
+    )
+    env.hass.config_entries.entries[entry_id] = entry
+    return entry
 
 
 def device_info(entity) -> Any:

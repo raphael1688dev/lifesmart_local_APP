@@ -3,14 +3,22 @@
 HA validates these rules only for core integrations. PROGRESS.md R31 has the
 rule-by-rule comparison; each test here pins one rule so it stays met.
 """
+import ast
+import asyncio
 import importlib
+import inspect
 import json
 import re
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
-from lifesmart.const import PLATFORMS
+from lifesmart import diagnostics
+from lifesmart.const import DOMAIN, PLATFORMS
+from lifesmart.models import LifeSmartConfigEntry, LifeSmartData
+
+from .fakes import AGT, HOST, HUB_REGISTRY_ID, make_env, runtime, setup, unload
 
 PKG = Path(__file__).resolve().parent.parent / "custom_components" / "lifesmart"
 README = (PKG.parent.parent / "README.md").read_text(encoding="utf-8")
@@ -78,3 +86,86 @@ def test_readme_states_the_polling_intervals():
     assert DEFAULT_UPDATE_INTERVAL == timedelta(minutes=15)
     assert HUB_INFO_UPDATE_INTERVAL == timedelta(days=1)
     assert "timedelta(seconds=90)" in (PKG / "__init__.py").read_text(encoding="utf-8")
+
+
+# --- runtime-data (R32 step 2) --------------------------------------------------
+
+@pytest.fixture
+def env(monkeypatch):
+    return make_env(monkeypatch)
+
+
+def test_nothing_is_kept_in_hass_data():
+    """runtime-data: no `hass.data` / `self.hass.data` anywhere in the code."""
+    hits = []
+    for path in sorted(PKG.glob("*.py")):
+        for node in ast.walk(ast.parse(path.read_text(encoding="utf-8"))):
+            if not (isinstance(node, ast.Attribute) and node.attr == "data"):
+                continue
+            owner = node.value
+            name = owner.id if isinstance(owner, ast.Name) else getattr(owner, "attr", None)
+            if name == "hass":
+                hits.append(f"{path.name}:{node.lineno}")
+    assert hits == []
+
+
+def test_setup_puts_typed_runtime_data_on_the_entry(env):
+    setup(env)
+    data = runtime(env)
+    assert isinstance(data, LifeSmartData)
+    assert data.api is env.apis[0]
+    assert (data.host, data.hub_key, data.hub_device_id) == (HOST, AGT, HUB_REGISTRY_ID)
+    assert env.hass.data == {}
+
+
+def test_unload_runs_every_unsub_and_stops_the_api(env):
+    """Unload no longer pops a dict: it must still release everything."""
+    setup(env)
+    data = runtime(env)
+    called = []
+    data.unsubs.append(lambda: called.append("extra"))
+    unload(env)
+    assert called == ["extra"]
+    assert env.issues.unsub_calls == 1   # the 90 s notify timer
+    assert env.apis[0].report_listeners == []
+    assert env.apis[0].stopped
+
+
+@pytest.mark.parametrize("platform", PLATFORMS)
+def test_platform_setup_takes_the_typed_entry(platform):
+    """runtime-data: the typed `LifeSmartConfigEntry` is used throughout."""
+    module = importlib.import_module(f"lifesmart.{platform}")
+    hints = inspect.get_annotations(module.async_setup_entry, eval_str=True)
+    assert hints["config_entry"] is LifeSmartConfigEntry
+
+
+def test_diagnostics_of_a_loaded_entry(env):
+    setup(env)
+    result = asyncio.run(diagnostics.async_get_config_entry_diagnostics(env.hass, env.entry))
+    assert result["host"] == HOST
+    assert result["device_count"] == 4
+    assert result["hub_info"]["mgatype"] == "LSJZX1K"
+    assert result["entry"]["data"]["token"] == "**REDACTED**"
+
+
+def test_diagnostics_of_an_entry_that_is_not_loaded(env):
+    """Downloadable for an entry whose setup failed: no runtime_data then."""
+    result = asyncio.run(diagnostics.async_get_config_entry_diagnostics(env.hass, env.entry))
+    assert (result["host"], result["device_count"], result["hub_info"]) == ("", 0, {})
+    assert result["entry"]["data"]["token"] == "**REDACTED**"
+    hub = SimpleNamespace(identifiers={(DOMAIN, f"hub_{AGT}")})
+    result = asyncio.run(diagnostics.async_get_device_diagnostics(env.hass, env.entry, hub))
+    assert result == {"device_type": "hub", "host": "", "hub_info": {}, "device_count": 0}
+
+
+def test_device_diagnostics(env):
+    setup(env)
+    hub = SimpleNamespace(identifiers={(DOMAIN, f"hub_{AGT}")})
+    result = asyncio.run(diagnostics.async_get_device_diagnostics(env.hass, env.entry, hub))
+    assert result["device_type"] == "hub" and result["host"] == HOST and result["device_count"] == 4
+    sub = SimpleNamespace(identifiers={(DOMAIN, "2711")})
+    result = asyncio.run(diagnostics.async_get_device_diagnostics(env.hass, env.entry, sub))
+    assert result["device_type"] == "sub_device" and result["payload"]["name"] == "Kitchen"
+    gone = SimpleNamespace(identifiers={(DOMAIN, "9999")})
+    result = asyncio.run(diagnostics.async_get_device_diagnostics(env.hass, env.entry, gone))
+    assert result["device_identifier"] == "9999"

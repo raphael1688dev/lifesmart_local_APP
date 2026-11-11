@@ -12,15 +12,14 @@ from homeassistant.components.binary_sensor import (
     BinarySensorDeviceClass,
     BinarySensorEntity,
 )
-from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import EntityCategory
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
 from . import generate_entity_id
-from .const import DOMAIN
 from .coordinator import LifeSmartCoordinator
 from .device_info import sub_device_info
+from .models import LifeSmartConfigEntry
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -31,24 +30,24 @@ PARALLEL_UPDATES = 0
 
 async def async_setup_entry(
     hass: HomeAssistant,
-    config_entry: ConfigEntry,
+    config_entry: LifeSmartConfigEntry,
     async_add_entities: AddEntitiesCallback,
 ) -> None:
     """Set up LifeSmart binary sensors."""
     _LOGGER.debug("Setting up LifeSmart binary_sensors")
 
-    entry_data = hass.data[DOMAIN]["entries"][config_entry.entry_id]
-    api = entry_data["api"]
-    coordinator: Optional[LifeSmartCoordinator] = entry_data.get("coordinator")
+    runtime = config_entry.runtime_data
+    api = runtime.api
+    coordinator = runtime.coordinator
     # D22: hub device registry ID — sub-devices hang off it via via_device_id.
-    hub_device_id: Optional[str] = entry_data.get("hub_device_id")
-    devices = entry_data.get("devices") or []
+    hub_device_id = runtime.hub_device_id
+    devices = runtime.devices
     if not devices:
         try:
             devices_data: Dict[str, Any] = await api.discover_devices()
             if isinstance(devices_data, dict) and isinstance(devices_data.get("msg"), list):
                 devices = devices_data["msg"]
-                entry_data["devices"] = devices
+                runtime.devices = devices
         except asyncio.TimeoutError:
             _LOGGER.error("Timeout while discovering devices")
             return

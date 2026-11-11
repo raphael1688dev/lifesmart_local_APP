@@ -28,7 +28,7 @@ from .fakes import (
     HUB_REGISTRY_ID,
     FakeAPI,
     device_info as _device_info,
-    entry_data as _entry_data,
+    runtime as _runtime,
     make_env,
     setup as _setup,
 )
@@ -57,7 +57,7 @@ def test_setup_registers_hub_device_before_forwarding_platforms(env):
     }
     assert call["identifiers"] == {HUB_IDENTIFIER}
     assert "via_device_id" not in call  # the hub is a top-level device
-    assert _entry_data(env)["hub_device_id"] == HUB_REGISTRY_ID
+    assert _runtime(env).hub_device_id == HUB_REGISTRY_ID
 
 
 @pytest.mark.parametrize("platform", ["switch", "sensor", "binary_sensor", "cover", "remote", "event"])
@@ -96,7 +96,6 @@ def test_unload_uses_the_raising_helper_and_cleans_up(env):
     assert env.hass.config_entries.unloaded == PLATFORMS
     assert env.issues.unsub_calls == 1
     assert api.stopped
-    assert DOMAIN not in env.hass.data
 
 
 def test_failed_unload_propagates_and_keeps_the_entry(env):
@@ -105,7 +104,7 @@ def test_failed_unload_propagates_and_keeps_the_entry(env):
     env.hass.config_entries.unload_error = RuntimeError("platform failed to unload")
     with pytest.raises(RuntimeError):
         asyncio.run(lifesmart.async_unload_entry(env.hass, env.entry))
-    assert env.entry.entry_id in env.hass.data[DOMAIN]["entries"]
+    assert _runtime(env).api is api  # still usable: the entry stays loaded
     assert not api.stopped
     assert env.issues.unsub_calls == 0
 

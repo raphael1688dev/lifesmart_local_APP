@@ -22,13 +22,12 @@ import logging
 from typing import Any, Callable, Dict, List, Optional, Tuple
 
 from homeassistant.components.event import EventDeviceClass, EventEntity
-from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
 from . import generate_entity_id
-from .const import DOMAIN
 from .device_info import sub_device_info
+from .models import LifeSmartConfigEntry
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -68,15 +67,15 @@ BUTTON_CHANNELS: Dict[str, Tuple[Tuple[str, ...], Dict[int, Tuple[str, Optional[
 
 async def async_setup_entry(
     hass: HomeAssistant,
-    config_entry: ConfigEntry,
+    config_entry: LifeSmartConfigEntry,
     async_add_entities: AddEntitiesCallback,
 ) -> None:
     """Set up LifeSmart button events."""
-    entry_data = hass.data[DOMAIN]["entries"][config_entry.entry_id]
-    api = entry_data["api"]
-    hub_device_id: Optional[str] = entry_data.get("hub_device_id")
+    runtime = config_entry.runtime_data
+    api = runtime.api
+    hub_device_id = runtime.hub_device_id
     entities: List[EventEntity] = []
-    for device in entry_data.get("devices") or []:
+    for device in runtime.devices:
         if not isinstance(device, dict) or not isinstance(device.get("me"), str):
             continue
         spec = BUTTON_CHANNELS.get(device.get("devtype"))  # type: ignore[arg-type]

@@ -3,14 +3,14 @@ import asyncio
 import logging
 from typing import Optional
 from homeassistant.components.switch import SwitchDeviceClass, SwitchEntity
-from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.entity import DeviceInfo
-from .const import DOMAIN, CMD_GET, CMD_SET
+from .const import CMD_GET, CMD_SET
 from .device_info import sub_device_info
 from .group_scene import SWITCH_GROUP_CLASSES, LifeSmartGroupScene, group_scenes
 from . import generate_entity_id
+from .models import LifeSmartConfigEntry
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -45,20 +45,20 @@ SUPPORTED_SWITCH_TYPES = [
 
 async def async_setup_entry(
     hass: HomeAssistant,
-    config_entry: ConfigEntry,
+    config_entry: LifeSmartConfigEntry,
     async_add_entities: AddEntitiesCallback,
 ) -> None:
     """Set up LifeSmart switches."""
-    entry_data = hass.data[DOMAIN]["entries"][config_entry.entry_id]
-    api = entry_data["api"]
+    runtime = config_entry.runtime_data
+    api = runtime.api
     # D22: hub device registry ID — sub-devices hang off it via via_device_id.
-    hub_device_id = entry_data.get("hub_device_id")
-    devices = entry_data.get("devices") or []
+    hub_device_id = runtime.hub_device_id
+    devices = runtime.devices
     if not devices:
         devices_data = await api.discover_devices()
         if isinstance(devices_data, dict) and isinstance(devices_data.get("msg"), list):
             devices = devices_data["msg"]
-            entry_data["devices"] = devices
+            runtime.devices = devices
     
     switches = []
     if isinstance(devices, list):
@@ -80,15 +80,15 @@ async def async_setup_entry(
                         )
 
     # D9 (R25): LI §5.2 `groupsw` scenes turn a group on / off.
-    hub_key = entry_data.get("hub_key") or entry_data.get("host", "")
-    for scene in group_scenes(entry_data, SWITCH_GROUP_CLASSES):
+    hub_key = runtime.hub_key
+    for scene in group_scenes(runtime.scenes, SWITCH_GROUP_CLASSES):
         switches.append(
             LifeSmartGroupSwitch(
                 api=api,
                 scene=scene,
                 platform="switch",
                 hub_key=hub_key,
-                hub_info=entry_data.get("hub_info") or {},
+                hub_info=runtime.hub_info,
                 title=config_entry.title or "LifeSmart Hub",
             )
         )

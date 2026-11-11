@@ -3,13 +3,13 @@ import asyncio
 import logging
 from typing import Optional, Any
 from homeassistant.components.cover import CoverEntity, CoverDeviceClass, CoverEntityFeature
-from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
-from .const import DOMAIN, CMD_SET, CMD_GET
+from .const import CMD_SET, CMD_GET
 from .coordinator import LifeSmartCoordinator
 from .device_info import sub_device_info
 from . import generate_entity_id
+from .models import LifeSmartConfigEntry
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -27,21 +27,21 @@ TYPE_ON = 0x81
 
 async def async_setup_entry(
     hass: HomeAssistant,
-    config_entry: ConfigEntry,
+    config_entry: LifeSmartConfigEntry,
     async_add_entities: AddEntitiesCallback,
 ) -> None:
     _LOGGER.debug("Setting up LifeSmart cover platform")
-    entry_data = hass.data[DOMAIN]["entries"][config_entry.entry_id]
-    api = entry_data["api"]
+    runtime = config_entry.runtime_data
+    api = runtime.api
     # D22: hub device registry ID — sub-devices hang off it via via_device_id.
-    hub_device_id = entry_data.get("hub_device_id")
-    coordinator: Optional[LifeSmartCoordinator] = entry_data.get("coordinator")
-    devices = entry_data.get("devices") or []
+    hub_device_id = runtime.hub_device_id
+    coordinator = runtime.coordinator
+    devices = runtime.devices
     if not devices:
         devices_data = await api.discover_devices()
         if isinstance(devices_data, dict) and isinstance(devices_data.get("msg"), list):
             devices = devices_data["msg"]
-            entry_data["devices"] = devices
+            runtime.devices = devices
     
     covers = []
     if isinstance(devices, list):

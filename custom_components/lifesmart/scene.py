@@ -17,11 +17,10 @@ import re
 from typing import Any, Dict, List
 
 from homeassistant.components.scene import Scene
-from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
-from .const import DOMAIN
+from .models import LifeSmartConfigEntry
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -43,16 +42,16 @@ def _slugify(value: str) -> str:
 
 async def async_setup_entry(
     hass: HomeAssistant,
-    config_entry: ConfigEntry,
+    config_entry: LifeSmartConfigEntry,
     async_add_entities: AddEntitiesCallback,
 ) -> None:
     """Discover scenes on the hub and register them with HA."""
-    entry_data = hass.data[DOMAIN]["entries"][config_entry.entry_id]
-    api = entry_data["api"]
+    runtime = config_entry.runtime_data
+    api = runtime.api
 
     scenes: List[Scene] = [
         LifeSmartScene(api=api, scene=item)
-        for item in entry_data.get("scenes") or []
+        for item in runtime.scenes
         if item.get("cls") in TRIGGER_ONLY_CLASSES
     ]
     _LOGGER.debug("Adding %d LifeSmart scenes", len(scenes))

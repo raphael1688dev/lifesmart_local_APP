@@ -6,7 +6,6 @@ import time
 from typing import Any, Dict, List, Optional
 
 from homeassistant.components import remote
-from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
@@ -14,6 +13,7 @@ from homeassistant.helpers.entity import DeviceInfo
 
 from .const import DOMAIN
 from .device_info import sub_device_info
+from .models import LifeSmartConfigEntry
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -38,21 +38,21 @@ def _slugify(text: Any) -> str:
 
 async def async_setup_entry(
     hass: HomeAssistant,
-    config_entry: ConfigEntry,
+    config_entry: LifeSmartConfigEntry,
     async_add_entities: AddEntitiesCallback,
 ) -> None:
     """Set up LifeSmart Remote devices."""
     _LOGGER.info("Setting up LifeSmart remotes")
-    entry_data = hass.data[DOMAIN]["entries"][config_entry.entry_id]
-    api = entry_data["api"]
+    runtime = config_entry.runtime_data
+    api = runtime.api
     # D22: hub device registry ID — sub-devices hang off it via via_device_id.
-    hub_device_id: Optional[str] = entry_data.get("hub_device_id")
-    devices = entry_data.get("devices") or []
+    hub_device_id = runtime.hub_device_id
+    devices = runtime.devices
     if not devices:
         devices_data = await api.discover_devices()
         if isinstance(devices_data, dict) and isinstance(devices_data.get("msg"), list):
             devices = devices_data["msg"]
-            entry_data["devices"] = devices
+            runtime.devices = devices
     
     remotes: List[LifeSmartRemote] = []
     
@@ -68,7 +68,7 @@ async def async_setup_entry(
                 _LOGGER.warning("Failed to load remote list from hub")
                 remote_list = []
         # R30: lets lifesmart.send_keys route a remote_id to the hub that has it.
-        entry_data["remote_ids"] = {
+        runtime.remote_ids = {
             item["remote"]["id"]
             for item in remote_list
             if isinstance(item, dict) and isinstance(item.get("remote"), dict) and "id" in item["remote"]

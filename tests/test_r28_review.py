@@ -21,7 +21,7 @@ from lifesmart.api import DEFAULT_GET_RETRIES, LifeSmartAPI
 from lifesmart.const import CMD_GET, CMD_GET_REPLY, CMD_NOTIFY, CMD_SET, DOMAIN
 from lifesmart.switch import LifeSmartSwitch
 
-from .fakes import AGT, DEVICES, HOST, FakeAPI, FakeDeviceRegistry, entry_data, make_env, setup
+from .fakes import AGT, DEVICES, HOST, FakeAPI, FakeDeviceRegistry, runtime, make_env, setup
 
 ServiceValidationError = lifesmart.ServiceValidationError
 
@@ -133,18 +133,18 @@ def test_setup_does_not_wait_for_the_time_zone(env, monkeypatch):
     monkeypatch.setattr(FakeAPI, "get_hub_timezone", slow_timezone)
     setup(env, run_background=False)
     assert asked == []                                   # setup finished without it
-    assert "timezone" not in entry_data(env)["hub_info"]
+    assert "timezone" not in runtime(env).hub_info
     (task,) = env.entry.background                       # read afterwards, in the background
     asyncio.run(task)
     assert asked == [True]
-    assert entry_data(env)["hub_info"]["timezone"] == 8  # listeners were told
+    assert runtime(env).hub_info["timezone"] == 8  # listeners were told
 
 
 def test_unreadable_time_zone_changes_nothing(env, monkeypatch):
     monkeypatch.setattr(FakeAPI, "get_hub_timezone", lambda self: asyncio.sleep(0, {"code": 1}))
     setup(env)
-    assert "timezone" not in entry_data(env)["hub_info"]
-    assert entry_data(env)["hub_info"]["ver"] == "1.0.5p3"
+    assert "timezone" not in runtime(env).hub_info
+    assert runtime(env).hub_info["ver"] == "1.0.5p3"
 
 
 def test_switch_read_back_in_the_command_path_is_not_resent():
@@ -197,7 +197,7 @@ def test_coordinators_are_given_the_config_entry(env):
     """Not relying on HA's ContextVar fallback (reported as an error for core
     integrations, tolerated for custom ones)."""
     setup(env)
-    data = entry_data(env)
-    assert data["coordinator"].config_entry is env.entry
-    assert data["hub_coordinator"].config_entry is env.entry
+    data = runtime(env)
+    assert data.coordinator.config_entry is env.entry
+    assert data.hub_coordinator.config_entry is env.entry
 

@@ -7,7 +7,6 @@ from homeassistant.components.sensor import (
     SensorEntity,
     SensorStateClass,
 )
-from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.entity import DeviceInfo, EntityCategory
@@ -16,10 +15,11 @@ from homeassistant.const import (
     SIGNAL_STRENGTH_DECIBELS_MILLIWATT,
     UnitOfTemperature,
 )
-from .const import CMD_GET, DOMAIN, HUB_MODEL_NAMES
+from .const import CMD_GET, HUB_MODEL_NAMES
 from .coordinator import LifeSmartCoordinator, LifeSmartHubCoordinator
 from .device_info import hub_device_info, hub_key_slug, sub_device_info
 from . import generate_entity_id
+from .models import LifeSmartConfigEntry
 _LOGGER = logging.getLogger(__name__)
 
 # Read-only platform fed by push and the shared coordinator: nothing to limit
@@ -30,23 +30,23 @@ UPDATE_INTERVAL_SECONDS = 900
 
 async def async_setup_entry(
     hass: HomeAssistant,
-    config_entry: ConfigEntry,
+    config_entry: LifeSmartConfigEntry,
     async_add_entities: AddEntitiesCallback,
 ) -> None:
     _LOGGER.debug("Setting up LifeSmart sensors")
 
-    entry_data = hass.data[DOMAIN]["entries"][config_entry.entry_id]
-    api = entry_data["api"]
-    coordinator: Optional[LifeSmartCoordinator] = entry_data.get("coordinator")
+    runtime = config_entry.runtime_data
+    api = runtime.api
+    coordinator = runtime.coordinator
     # D22: hub device registry ID — sub-devices hang off it via via_device_id.
-    hub_device_id: Optional[str] = entry_data.get("hub_device_id")
-    devices = entry_data.get("devices") or []
+    hub_device_id = runtime.hub_device_id
+    devices = runtime.devices
     if not devices:
         try:
             devices_data: Dict[str, Any] = await api.discover_devices()
             if isinstance(devices_data, dict) and isinstance(devices_data.get("msg"), list):
                 devices = devices_data["msg"]
-                entry_data["devices"] = devices
+                runtime.devices = devices
         except asyncio.TimeoutError:
             _LOGGER.error("Timeout while discovering devices")
             return
@@ -124,9 +124,9 @@ async def async_setup_entry(
 
     # Phase 1 / R9: hub-level diagnostic sensors driven by cfg:getver; D4
     # (R25) the hub coordinator re-reads it daily, plus cfg:timezone.
-    hub_coordinator: Optional[LifeSmartHubCoordinator] = entry_data.get("hub_coordinator")
-    hub_info = entry_data.get("hub_info") or {}
-    hub_key = entry_data.get("hub_key") or entry_data.get("host", "")
+    hub_coordinator = runtime.hub_coordinator
+    hub_info = runtime.hub_info
+    hub_key = runtime.hub_key
     for field in ("ver", "osver", "mgatype", "timezone"):
         sensors.append(LifeSmartHubInfoSensor(
             hub_info=hub_info, hub_key=hub_key, field=field,

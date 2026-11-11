@@ -5,9 +5,8 @@ import socket
 import time
 import asyncio
 from datetime import timedelta
-from typing import Any, Callable, Dict, List, Mapping, Optional, Tuple
+from typing import Any, Callable, Dict, List, Mapping, Optional
 import voluptuous as vol
-from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant, ServiceCall, callback
 from homeassistant.exceptions import (
     ConfigEntryNotReady,
@@ -25,6 +24,7 @@ from .const import DOMAIN, PLATFORMS, API_TIMEOUT
 from .api import LifeSmartAPI, _extract_membership_changes
 from .coordinator import LifeSmartCoordinator, LifeSmartHubCoordinator
 from .device_info import hub_device_info_kwargs, hub_key_slug
+from .models import LifeSmartConfigEntry, LifeSmartData
 
 # R28: async_setup below only registers the actions; the integration is set
 # up from config entries (hassfest wants a CONFIG_SCHEMA next to async_setup).
@@ -108,7 +108,7 @@ def _resolve_hub_key(
     return host
 
 
-def _existing_hub_key(dev_reg: Any, entry: ConfigEntry) -> Optional[str]:
+def _existing_hub_key(dev_reg: Any, entry: LifeSmartConfigEntry) -> Optional[str]:
     """The key of this entry's hub device, if one is registered."""
     for device in dr.async_entries_for_config_entry(dev_reg, entry.entry_id):
         for domain, identifier in device.identifiers:
@@ -118,7 +118,7 @@ def _existing_hub_key(dev_reg: Any, entry: ConfigEntry) -> Optional[str]:
 
 
 def _migrate_hub_key(
-    hass: HomeAssistant, entry: ConfigEntry, dev_reg: Any, old_key: Optional[str], new_key: str,
+    hass: HomeAssistant, entry: LifeSmartConfigEntry, dev_reg: Any, old_key: Optional[str], new_key: str,
 ) -> None:
     """Move the hub device and its entities from `old_key` to `new_key`.
 
@@ -166,7 +166,7 @@ def _migrate_hub_key(
 
 
 @callback
-def _async_update_version_issue(hass: HomeAssistant, entry: ConfigEntry, info: Mapping[str, Any]) -> None:
+def _async_update_version_issue(hass: HomeAssistant, entry: LifeSmartConfigEntry, info: Mapping[str, Any]) -> None:
     """D17: surface a failed cfg:getver as a repair issue; clear it on success."""
     issue_id = f"hub_version_unknown_{entry.entry_id}"
     if info.get("version_ok"):
@@ -192,7 +192,7 @@ async def async_setup(hass: HomeAssistant, config: Dict[str, Any]) -> bool:
     return True
 
 
-async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> None:
+async def async_setup_entry(hass: HomeAssistant, entry: LifeSmartConfigEntry) -> None:
     """Set up LifeSmart Local from a config entry.
 
     R23 (2026-11-05, minimum HA 2026.11): the config entry functions return
@@ -225,8 +225,6 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> None:
         _LOGGER.error("Failed to connect or discover devices: %s", err)
         await api.async_stop()
         raise ConfigEntryNotReady from err
-
-    domain_data = hass.data.setdefault(DOMAIN, {"entries": {}})
 
     devices = []
     if isinstance(discovery, dict):
@@ -291,26 +289,27 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> None:
 
     scenes = await _async_fetch_scenes(api)
 
-    entry_data: Dict[str, Any] = {
-        "api": api,
-        "devices": devices,
-        "hub_info": hub_info,
-        "host": entry.data["host"],
-        "hub_key": hub_key,
-        "coordinator": coordinator,
-        "hub_coordinator": hub_coordinator,
-        "hub_device_id": hub_device.id,
-        "scenes": scenes,
-        "unsubs": [],
-    }
-    domain_data["entries"][entry.entry_id] = entry_data
-    unsubs: List[Callable[[], None]] = entry_data["unsubs"]
+    # HA quality scale `runtime-data`: on the entry, not in hass.data. Home
+    # Assistant removes it once the entry has unloaded.
+    runtime = LifeSmartData(
+        api=api,
+        devices=devices,
+        hub_info=hub_info,
+        host=entry.data["host"],
+        hub_key=hub_key,
+        coordinator=coordinator,
+        hub_coordinator=hub_coordinator,
+        hub_device_id=hub_device.id,
+        scenes=scenes,
+    )
+    entry.runtime_data = runtime
+    unsubs = runtime.unsubs
 
     @callback
     def _on_hub_info() -> None:
         # D4: daily cfg:getver — keep the device page and the issue current.
         info = hub_coordinator.data or {}
-        entry_data["hub_info"] = info
+        runtime.hub_info = info
         _async_update_version_issue(hass, entry, info)
         kwargs = hub_device_info_kwargs(hub_key, entry.title, info)
         update: Dict[str, Any] = {"model": kwargs["model"]}
@@ -369,8 +368,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> None:
             _LOGGER.info("LifeSmart hub %s is answering again", entry.data["host"])
             ir.async_delete_issue(hass, DOMAIN, issue_id_unreachable)
 
-    unsub_notify = async_track_time_interval(hass, _refresh_notify, timedelta(seconds=90))
-    entry_data["unsub_notify"] = unsub_notify
+    unsubs.append(async_track_time_interval(hass, _refresh_notify, timedelta(seconds=90)))
 
     # D6 (R25): reload when the hub reports a paired or removed sub-device.
     known = {d["me"] for d in devices if isinstance(d, dict) and isinstance(d.get("me"), str)}
@@ -434,7 +432,7 @@ async def _async_fetch_scenes(api: LifeSmartAPI) -> List[Dict[str, Any]]:
         and isinstance(item.get("cls"), str)
     ]
 
-async def async_migrate_entry(hass: HomeAssistant, entry: ConfigEntry) -> None:
+async def async_migrate_entry(hass: HomeAssistant, entry: LifeSmartConfigEntry) -> None:
     """Migrate config entry across version bumps.
 
     Version history:
@@ -493,7 +491,7 @@ async def async_migrate_entry(hass: HomeAssistant, entry: ConfigEntry) -> None:
         _LOGGER.info("Migration to version 2 complete (entry=%s)", entry.entry_id)
 
 
-async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> None:
+async def async_unload_entry(hass: HomeAssistant, entry: LifeSmartConfigEntry) -> None:
     """Unload a config entry.
 
     R23: raises (translated by HA) when a platform fails to unload. The
@@ -503,17 +501,10 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> None:
     deletes it once the hub answers.
     """
     await hass.config_entries.async_unload_platforms_or_raise(entry, PLATFORMS)
-    domain_data = hass.data[DOMAIN]
-    entry_data = domain_data["entries"].pop(entry.entry_id, None)
-    if entry_data and entry_data.get("unsub_notify"):
-        entry_data["unsub_notify"]()
-    for unsub in (entry_data or {}).get("unsubs", []):
+    runtime = entry.runtime_data
+    for unsub in runtime.unsubs:
         unsub()
-    api: Optional[LifeSmartAPI] = entry_data["api"] if entry_data else None
-    if api is not None:
-        await api.async_stop()
-    if not domain_data["entries"]:
-        hass.data.pop(DOMAIN)
+    await runtime.api.async_stop()
 
 
 # D8 (R25): hub configuration commands (LI §3.3.10) as actions. Each takes
@@ -525,14 +516,22 @@ SERVICE_UPGRADE_HUB_FIRMWARE = "upgrade_hub_firmware"
 SERVICE_FACTORY_RESET_HUB = "factory_reset_hub"
 
 
-def _entry_for_call(hass: HomeAssistant, call: ServiceCall) -> Tuple[ConfigEntry, Dict[str, Any]]:
+def _loaded_entries(hass: HomeAssistant) -> List[LifeSmartConfigEntry]:
+    """This integration's entries that finished setup.
+
+    Only a loaded entry has `runtime_data`: it is set during setup and
+    removed by Home Assistant after unload.
+    """
+    return hass.config_entries.async_loaded_entries(DOMAIN)
+
+
+def _entry_for_call(hass: HomeAssistant, call: ServiceCall) -> LifeSmartConfigEntry:
     """The loaded config entry an action names, or ServiceValidationError."""
     entry_id = call.data[ATTR_CONFIG_ENTRY_ID]
-    entry = hass.config_entries.async_get_entry(entry_id)
-    entry_data = hass.data.get(DOMAIN, {}).get("entries", {}).get(entry_id)
-    if entry is None or entry.domain != DOMAIN or entry_data is None:
-        raise ServiceValidationError(f"{entry_id} is not a loaded LifeSmart hub")
-    return entry, entry_data
+    for entry in _loaded_entries(hass):
+        if entry.entry_id == entry_id:
+            return entry
+    raise ServiceValidationError(f"{entry_id} is not a loaded LifeSmart hub")
 
 
 def _raise_unless_ok(reply: Any, command: str) -> None:
@@ -541,7 +540,7 @@ def _raise_unless_ok(reply: Any, command: str) -> None:
 
 
 def _sub_device_me(
-    hass: HomeAssistant, entry: ConfigEntry, device_id: Optional[str],
+    hass: HomeAssistant, entry: LifeSmartConfigEntry, device_id: Optional[str],
 ) -> Optional[str]:
     """Map an HA device id to the LifeSmart `me` for cfg:devname.
 
@@ -575,23 +574,22 @@ def _async_register_services(hass: HomeAssistant) -> None:
         keys_to_send = [keys] if isinstance(keys, str) else list(keys)
 
         if call.data.get(ATTR_CONFIG_ENTRY_ID) is not None:
-            _entry, entry_data = _entry_for_call(hass, call)
-            targets = [entry_data]
+            targets = [_entry_for_call(hass, call).runtime_data]
         else:
-            loaded = list(hass.data.get(DOMAIN, {}).get("entries", {}).values())
+            loaded = [entry.runtime_data for entry in _loaded_entries(hass)]
             if not loaded:
                 raise ServiceValidationError("No LifeSmart hub is loaded")
             # remote.py records which remotes each hub has; a remote_id no
             # hub lists (e.g. added in the app since setup) goes to them all.
-            owners = [e for e in loaded if remote_id in e.get("remote_ids", ())]
+            owners = [hub for hub in loaded if remote_id in hub.remote_ids]
             targets = owners or loaded
 
         for key in keys_to_send:
             accepted = False
             last: Any = None
-            for entry_data in targets:
+            for hub in targets:
                 try:
-                    reply = await entry_data["api"].send_remote_key(remote_id, key)
+                    reply = await hub.api.send_remote_key(remote_id, key)
                 except (asyncio.TimeoutError, OSError) as err:
                     last = err
                     continue
@@ -605,33 +603,33 @@ def _async_register_services(hass: HomeAssistant) -> None:
                 )
 
     async def _handle_set_hub_timezone(call: ServiceCall) -> None:
-        _entry, entry_data = _entry_for_call(hass, call)
-        reply = await entry_data["api"].set_hub_timezone(
+        runtime = _entry_for_call(hass, call).runtime_data
+        reply = await runtime.api.set_hub_timezone(
             call.data["timezone"], call.data["daylight_saving"]
         )
         _raise_unless_ok(reply, "cfg:timezone")
-        await entry_data["hub_coordinator"].async_request_refresh()
+        await runtime.hub_coordinator.async_request_refresh()
 
     async def _handle_rename_device(call: ServiceCall) -> None:
-        entry, entry_data = _entry_for_call(hass, call)
+        entry = _entry_for_call(hass, call)
         me = _sub_device_me(hass, entry, call.data.get("device_id"))
-        reply = await entry_data["api"].set_device_name(call.data["name"], me)
+        reply = await entry.runtime_data.api.set_device_name(call.data["name"], me)
         _raise_unless_ok(reply, "cfg:devname")
         # Device names come from `eps` at setup; reload to show the new one.
         hass.config_entries.async_schedule_reload(entry.entry_id)
 
     async def _handle_upgrade_hub_firmware(call: ServiceCall) -> None:
-        _entry, entry_data = _entry_for_call(hass, call)
-        reply = await entry_data["api"].upgrade_hub(call.data["reboot"])
+        entry = _entry_for_call(hass, call)
+        reply = await entry.runtime_data.api.upgrade_hub(call.data["reboot"])
         _raise_unless_ok(reply, "cfg:upgrade")
 
     async def _handle_factory_reset_hub(call: ServiceCall) -> None:
-        entry, entry_data = _entry_for_call(hass, call)
+        entry = _entry_for_call(hass, call)
         if call.data["confirm"] is not True:
             raise ServiceValidationError("Set confirm to true to factory-reset the hub")
         _LOGGER.warning("Sending cfg:reset — %s returns to factory settings", entry.title)
         try:
-            reply = await entry_data["api"].factory_reset_hub()
+            reply = await entry.runtime_data.api.factory_reset_hub()
         except asyncio.TimeoutError:
             # Like cfg:reboot, the hub may restart before it answers.
             _LOGGER.info("cfg:reset got no reply; the hub is probably restarting")
@@ -710,7 +708,7 @@ _LEGACY_FEATURES = ("connectivity", "signal", "temp", "battery", "cover", "remot
 
 
 def _migrate_unique_ids(
-    hass: HomeAssistant, entry: ConfigEntry, devices: list,
+    hass: HomeAssistant, entry: LifeSmartConfigEntry, devices: list,
 ) -> None:
     """Rewrite legacy <feature>_<me> unique_ids to <feature>_<agt>_<me>.
 
@@ -774,7 +772,7 @@ def _migrate_unique_ids(
         _LOGGER.info("Migrated %d unique_id(s) to include agt prefix", rewrites)
 
 
-def _migrate_entity_ids(hass: HomeAssistant, entry: ConfigEntry) -> None:
+def _migrate_entity_ids(hass: HomeAssistant, entry: LifeSmartConfigEntry) -> None:
     """Rename entity_ids whose object part contains chars HA 2027.2 will reject.
 
     HA requires entity_id's object part to match ``[a-z0-9_]+``. Some hubs

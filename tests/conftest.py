@@ -235,6 +235,24 @@ def _install_ha_stubs() -> None:
         sys.modules[mod.__name__] = mod
         setattr(components, name, mod)
 
+    # R32: diagnostics.py. The redaction mirrors HA's: the named keys are
+    # replaced wherever they appear, at any depth.
+    diag_mod = types.ModuleType("homeassistant.components.diagnostics")
+
+    def _redact(data, to_redact):
+        if isinstance(data, dict):
+            return {
+                k: "**REDACTED**" if k in to_redact else _redact(v, to_redact)
+                for k, v in data.items()
+            }
+        if isinstance(data, list):
+            return [_redact(v, to_redact) for v in data]
+        return data
+
+    diag_mod.async_redact_data = _redact
+    sys.modules[diag_mod.__name__] = diag_mod
+    components.diagnostics = diag_mod  # type: ignore[attr-defined]
+
     _platform_module("sensor", "SensorEntity")
     _platform_module("binary_sensor", "BinarySensorEntity")
     _platform_module("cover", "CoverEntity")

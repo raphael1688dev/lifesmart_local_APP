@@ -46,7 +46,8 @@ USED: dict[str, list[str]] = {
     "helpers/config_validation.py": ["config_entry_only_config_schema"],
     "config_entries.py": [
         "async_forward_entry_setups", "async_unload_platforms_or_raise", "async_update_entry",
-        "async_schedule_reload", "async_get_entry", "async_create_background_task",
+        "async_schedule_reload", "async_get_entry", "async_loaded_entries",
+        "async_create_background_task",
         "async_set_unique_id", "_abort_if_unique_id_configured", "async_update_reload_and_abort",
         "async_create_entry", "async_show_form",
     ],

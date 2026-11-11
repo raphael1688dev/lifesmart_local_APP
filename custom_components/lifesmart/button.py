@@ -9,14 +9,13 @@ import logging
 from typing import Any, Callable, Dict, List, Optional
 
 from homeassistant.components.button import ButtonDeviceClass, ButtonEntity
-from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import EntityCategory
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.event import async_call_later
 
-from .const import DOMAIN
 from .device_info import hub_device_info, hub_key_slug
+from .models import LifeSmartConfigEntry
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -34,14 +33,14 @@ REBOOT_RELOAD_DELAY_SECONDS = 120
 
 async def async_setup_entry(
     hass: HomeAssistant,
-    config_entry: ConfigEntry,
+    config_entry: LifeSmartConfigEntry,
     async_add_entities: AddEntitiesCallback,
 ) -> None:
     """Set up LifeSmart hub-level buttons."""
-    entry_data = hass.data[DOMAIN]["entries"][config_entry.entry_id]
-    api = entry_data["api"]
-    hub_key = entry_data.get("hub_key") or entry_data.get("host", "")
-    hub_info = entry_data.get("hub_info") or {}
+    runtime = config_entry.runtime_data
+    api = runtime.api
+    hub_key = runtime.hub_key
+    hub_info = runtime.hub_info
     title = config_entry.title or "LifeSmart Hub"
 
     buttons: List[ButtonEntity] = [

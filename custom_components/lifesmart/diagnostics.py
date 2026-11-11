@@ -12,11 +12,11 @@ from __future__ import annotations
 from typing import Any
 
 from homeassistant.components.diagnostics import async_redact_data
-from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.device_registry import DeviceEntry
 
 from .const import DOMAIN
+from .models import LifeSmartConfigEntry, LifeSmartData
 
 # Keys whose values get replaced with "**REDACTED**" before returning.
 # `agt` and `lsid` are arguably PII (uniquely identify the hub),
@@ -26,15 +26,24 @@ from .const import DOMAIN
 TO_REDACT = {"token", "sign", "password", "C_WPAPSK", "C_password"}
 
 
+def _runtime(entry: LifeSmartConfigEntry) -> LifeSmartData | None:
+    """The entry's runtime data, or None while it is not loaded.
+
+    Diagnostics can be downloaded for an entry that failed to set up; it has
+    no `runtime_data` then, and the download should still work.
+    """
+    return getattr(entry, "runtime_data", None)
+
+
 async def async_get_config_entry_diagnostics(
-    hass: HomeAssistant, entry: ConfigEntry
+    hass: HomeAssistant, entry: LifeSmartConfigEntry
 ) -> dict[str, Any]:
     """Return diagnostics for a config entry."""
-    entry_data = hass.data.get(DOMAIN, {}).get("entries", {}).get(entry.entry_id, {})
+    runtime = _runtime(entry)
 
-    devices = entry_data.get("devices") or []
-    hub_info = entry_data.get("hub_info") or {}
-    host = entry_data.get("host", "")
+    devices = runtime.devices if runtime else []
+    hub_info = runtime.hub_info if runtime else {}
+    host = runtime.host if runtime else ""
 
     # Count devices by devtype so reviewers can spot weird/undocumented types
     # (like the V_SI case from 2026-05-23) without scanning every entry.
@@ -60,7 +69,7 @@ async def async_get_config_entry_diagnostics(
 
 
 async def async_get_device_diagnostics(
-    hass: HomeAssistant, entry: ConfigEntry, device: DeviceEntry
+    hass: HomeAssistant, entry: LifeSmartConfigEntry, device: DeviceEntry
 ) -> dict[str, Any]:
     """Return diagnostics for a single device.
 
@@ -68,8 +77,8 @@ async def async_get_device_diagnostics(
     the synthetic hub device `(DOMAIN, f"hub_{hub_key}")` (hub ID, or the host
     for entries older than R25). We try both shapes.
     """
-    entry_data = hass.data.get(DOMAIN, {}).get("entries", {}).get(entry.entry_id, {})
-    devices = entry_data.get("devices") or []
+    runtime = _runtime(entry)
+    devices = runtime.devices if runtime else []
 
     # Try to find a matching sub-device by `me`.
     target_me: str | None = None
@@ -81,8 +90,8 @@ async def async_get_device_diagnostics(
                     # Hub-level device — return hub_info.
                     return {
                         "device_type": "hub",
-                        "host": entry_data.get("host", ""),
-                        "hub_info": entry_data.get("hub_info", {}),
+                        "host": runtime.host if runtime else "",
+                        "hub_info": runtime.hub_info if runtime else {},
                         "device_count": len(devices),
                     }
                 target_me = value
