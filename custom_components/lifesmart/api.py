@@ -22,6 +22,42 @@ SCENE_TYPE_ON = 0x81
 SCENE_TYPE_OFF = 0x80
 
 
+# What a reply that is still code 101 after `send_command` means (R34).
+REJECTED_TOKEN = "token"
+REJECTED_CLOCK = "clock"
+
+
+def _is_code_101(reply: Any) -> bool:
+    return isinstance(reply, dict) and reply.get("code") == 101
+
+
+def _hub_time(reply: Any) -> Optional[int]:
+    """The hub's clock (epoch seconds) from a code-101 reply, if it sent one."""
+    msg = reply.get("msg") if isinstance(reply, dict) else None
+    ts = msg.get("ts") if isinstance(msg, dict) else None
+    return ts if isinstance(ts, int) and not isinstance(ts, bool) else None
+
+
+def rejection(reply: Any) -> Optional[str]:
+    """Why the hub refused a request, for a reply returned by `send_command`.
+
+    * None: the reply is not code 101.
+    * REJECTED_TOKEN: code 101 with the hub's clock in it. `send_command` has
+      already resent the request with that clock, so the timestamp was right
+      and what the hub rejects is the signature: the token is wrong.
+    * REJECTED_CLOCK: code 101 without a clock. Nothing could be corrected, so
+      it cannot be told apart. Not seen on a real hub.
+
+    Measured 2026-11-11 on a Smart Station (LSJZX1K) and a DEFED hub
+    (LSDEFED), firmware 1.0.94p10: a wrong token gives code 101 with `ts`; a
+    wrong *model* with the right token is accepted. The hub does not check
+    the model, so only the token can be "wrong".
+    """
+    if not _is_code_101(reply):
+        return None
+    return REJECTED_TOKEN if _hub_time(reply) is not None else REJECTED_CLOCK
+
+
 class LifeSmartAPI:
     def __init__(self, host: str, model: str, token: str, timeout: int = 5, local_port: int = 12346):
         self.host = host
@@ -70,12 +106,14 @@ class LifeSmartAPI:
         base_string = ",".join(parts)
         return hashlib.md5(base_string.encode()).hexdigest()
 
-    def apply_ts_from_response(self, response: Dict[str, Any]) -> None:
-        """Calculate ts_offset from a code-101 hub response."""
-        hub_ts = response.get("msg", {}).get("ts") if isinstance(response.get("msg"), dict) else None
-        if isinstance(hub_ts, int):
-            self.ts_offset = hub_ts - int(time.time())
-            _LOGGER.debug("ts_offset set to %d seconds", self.ts_offset)
+    def apply_ts_from_response(self, response: Dict[str, Any]) -> bool:
+        """Take the hub's clock from a code-101 reply. False if it gave none."""
+        hub_ts = _hub_time(response)
+        if hub_ts is None:
+            return False
+        self.ts_offset = hub_ts - int(time.time())
+        _LOGGER.debug("ts_offset set to %d seconds", self.ts_offset)
+        return True
 
     def _create_message(self, obj: str, args: Dict[str, Any], pkg_type: int, msg_id: int) -> bytes:
         ts = int(time.time()) + self.ts_offset
@@ -168,6 +206,23 @@ class LifeSmartAPI:
         """
         if retries is None:
             retries = DEFAULT_GET_RETRIES if pkg_type == CMD_GET else 0
+        reply = await self._send_with_resend(obj, args, pkg_type, timeout, retries)
+        # R34: code 101 means "timestamp more than five minutes off" (LI §3.2)
+        # and, as seen on real hubs, "signature wrong". The reply carries the
+        # hub's clock, so take it and ask once more: that settles the first
+        # case, for every command and at any time, not only at setup. A
+        # request answered with 101 was not carried out, so sending it again
+        # is safe even for commands that must not be repeated. A second 101
+        # is returned to the caller; see `rejection()`.
+        if _is_code_101(reply) and self.apply_ts_from_response(reply):
+            _LOGGER.debug("Hub answered %s with code 101; resending with its clock", obj)
+            reply = await self._send_with_resend(obj, args, pkg_type, timeout, retries)
+        return reply
+
+    async def _send_with_resend(
+        self, obj: str, args: Dict[str, Any], pkg_type: int,
+        timeout: Optional[float], retries: int,
+    ) -> Dict[str, Any]:
         attempt = 0
         while True:
             try:

@@ -90,8 +90,8 @@ def test_logs_once_when_it_stops_answering_and_once_when_back(caplog):
             hub.record_success()
     lines = [(r.levelno, r.getMessage()) for r in caplog.records]
     assert [level for level, _ in lines] == [logging.INFO, logging.INFO]
-    assert "not answering" in lines[0][1] and HOST in lines[0][1]
-    assert "answering again" in lines[1][1] and HOST in lines[1][1]
+    assert "unavailable: TimeoutError" in lines[0][1] and HOST in lines[0][1]
+    assert "available again" in lines[1][1] and HOST in lines[1][1]
 
 
 def test_no_recovery_line_without_an_outage(caplog):

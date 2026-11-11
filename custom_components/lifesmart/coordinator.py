@@ -21,9 +21,10 @@ from datetime import timedelta
 from typing import TYPE_CHECKING, Any, Dict, Optional
 
 from homeassistant.core import HomeAssistant
+from homeassistant.exceptions import ConfigEntryAuthFailed
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
 
-from .api import LifeSmartAPI
+from .api import REJECTED_TOKEN, LifeSmartAPI, rejection
 
 if TYPE_CHECKING:
     # models.py imports this module for the dataclass fields.
@@ -64,6 +65,9 @@ class LifeSmartCoordinator(DataUpdateCoordinator[Dict[str, Dict[str, Any]]]):
         if not isinstance(response, dict):
             raise UpdateFailed(f"Unexpected discovery response shape: {type(response).__name__}")
 
+        if rejection(response) == REJECTED_TOKEN:
+            # R34: Home Assistant opens the reauth form for this.
+            raise ConfigEntryAuthFailed("The hub rejected the token (code 101)")
         if response.get("code") != 0:
             raise UpdateFailed(f"Hub returned non-zero code: {response.get('code')}")
 

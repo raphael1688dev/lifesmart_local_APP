@@ -9,6 +9,7 @@ from typing import Any, Callable, Dict, List, Mapping, Optional
 import voluptuous as vol
 from homeassistant.core import HomeAssistant, ServiceCall, callback
 from homeassistant.exceptions import (
+    ConfigEntryAuthFailed,
     ConfigEntryNotReady,
     HomeAssistantError,
     ServiceValidationError,
@@ -21,7 +22,12 @@ from homeassistant.helpers import (
 )
 from homeassistant.helpers.event import async_call_later, async_track_time_interval
 from .const import DOMAIN, PLATFORMS, API_TIMEOUT
-from .api import LifeSmartAPI, _extract_membership_changes
+from .api import (
+    REJECTED_TOKEN,
+    LifeSmartAPI,
+    _extract_membership_changes,
+    rejection,
+)
 from .availability import HubAvailability
 from .coordinator import LifeSmartCoordinator, LifeSmartHubCoordinator
 from .device_info import hub_device_info_kwargs, hub_key_slug
@@ -211,33 +217,32 @@ async def async_setup_entry(hass: HomeAssistant, entry: LifeSmartConfigEntry) ->
 
     try:
         await api.async_start()
+        # On code 101 send_command takes the hub's clock and asks again, so
+        # what comes back here is final (R34).
         discovery = await api.discover_devices()
-
-        if isinstance(discovery, dict) and discovery.get("code") == 101:
-            _LOGGER.warning(
-                "LifeSmart hub returned code 101 (timestamp rejected). "
-                "Adjusting ts_offset from hub response and retrying."
-            )
-            api.apply_ts_from_response(discovery)
-            discovery = await api.discover_devices()
-
         _LOGGER.debug("Raw discovery response: %s", discovery)
     except (asyncio.TimeoutError, OSError, KeyError, ValueError, TypeError) as err:
         _LOGGER.error("Failed to connect or discover devices: %s", err)
         await api.async_stop()
         raise ConfigEntryNotReady from err
 
+    # R34 (quality scale `test-before-setup`): say what is wrong instead of
+    # loading with no devices, which is what every hub error did before.
+    failure = _setup_failure(discovery)
+    if failure is not None:
+        await api.async_stop()
+        raise failure
+
     devices = []
-    if isinstance(discovery, dict):
-        if discovery.get("code") == 0 and "msg" in discovery:
-            msg_data = discovery["msg"]
-            if isinstance(msg_data, list):
-                devices = msg_data
-            elif isinstance(msg_data, dict):
-                devices = [dev for dev in msg_data.values() if isinstance(dev, dict)]
+    msg_data = discovery.get("msg")
+    if isinstance(msg_data, list):
+        devices = msg_data
+    elif isinstance(msg_data, dict):
+        devices = [dev for dev in msg_data.values() if isinstance(dev, dict)]
 
     if not devices:
-        _LOGGER.warning("No devices found after discovery. Raw data: %s", discovery)
+        # Code 0 and nothing paired: the hub's own entities still work.
+        _LOGGER.info("The LifeSmart hub at %s reports no sub-devices", entry.data["host"])
     else:
         _LOGGER.info("Successfully loaded %s devices from LifeSmart Hub.", len(devices))
 
@@ -346,13 +351,14 @@ async def async_setup_entry(hass: HomeAssistant, entry: LifeSmartConfigEntry) ->
     async def _refresh_notify(_now) -> None:
         # The 90 s re-subscription (LI §4: expires after 300 s) doubles as the
         # hub heartbeat for the `hub_unreachable` repair issue (R19).
+        reply: Any = None
         try:
-            await api.configure_event_service(local_ip, api.local_port)
+            reply = await api.configure_event_service(local_ip, api.local_port)
         except (asyncio.TimeoutError, OSError) as err:
             _LOGGER.debug("Failed to refresh OpenDev event service: %s", err)
             # R32: two of these in a row make the hub's entities unavailable
             # (availability.py logs it once); five minutes raise the issue.
-            runtime.availability.record_failure(type(err).__name__)
+            runtime.availability.record_failure(f"it is not answering ({type(err).__name__})")
             minutes = reachability.record_failure(time.monotonic())
             if minutes is not None:
                 ir.async_create_issue(
@@ -370,11 +376,20 @@ async def async_setup_entry(hass: HomeAssistant, entry: LifeSmartConfigEntry) ->
         except (KeyError, ValueError) as err:
             # The hub answered; the payload was odd. Reachable.
             _LOGGER.debug("Unexpected OpenDev event service reply: %s", err)
-        # The "answering again" line is logged by availability.py, once, and
-        # only if "not answering" was logged before it.
-        runtime.availability.record_success()
+        # The hub answered: it is reachable, whatever it said.
         if reachability.record_success():
             ir.async_delete_issue(hass, DOMAIN, issue_id_unreachable)
+        if rejection(reply) == REJECTED_TOKEN:
+            # R34: the token was changed on the hub while we were running.
+            # Nothing we send is carried out, so the entities are as good as
+            # unavailable; ask the user for the new token. Home Assistant
+            # keeps a single reauth flow per entry, however often this runs.
+            runtime.availability.record_failure("it rejects the token (code 101)")
+            entry.async_start_reauth(hass)
+            return
+        # availability.py logs "available again" once, and only after it
+        # logged the outage.
+        runtime.availability.record_success()
 
     unsubs.append(async_track_time_interval(hass, _refresh_notify, timedelta(seconds=90)))
 
@@ -413,6 +428,30 @@ async def async_setup_entry(hass: HomeAssistant, entry: LifeSmartConfigEntry) ->
     entry.async_create_background_task(
         hass, hub_coordinator.async_load_timezone(), f"{DOMAIN} hub time zone"
     )
+
+
+def _setup_failure(discovery: Any) -> Optional[Exception]:
+    """What to raise for the hub's answer to the first `eps`, or None.
+
+    * the token is rejected -> ConfigEntryAuthFailed: Home Assistant shows
+      "reauthentication required" and opens the reauth form;
+    * anything else that is not code 0 -> ConfigEntryNotReady: Home Assistant
+      retries on its own and shows the message meanwhile. Such an answer has
+      not been seen on a real hub, so it is not assumed to be permanent.
+    """
+    why = rejection(discovery)
+    if why == REJECTED_TOKEN:
+        return ConfigEntryAuthFailed(
+            "The hub rejected the token (code 101 although the timestamp was correct)"
+        )
+    if why is not None:
+        return ConfigEntryNotReady(
+            "The hub answered code 101 without its time, so the clock could not be corrected"
+        )
+    if isinstance(discovery, dict) and discovery.get("code") == 0:
+        return None
+    code = discovery.get("code") if isinstance(discovery, dict) else type(discovery).__name__
+    return ConfigEntryNotReady(f"The hub answered the device list request with {code!r}")
 
 
 async def _async_fetch_scenes(api: LifeSmartAPI) -> List[Dict[str, Any]]:
@@ -470,10 +509,7 @@ async def async_migrate_entry(hass: HomeAssistant, entry: LifeSmartConfigEntry) 
         devices: list = []
         try:
             await api.async_start()
-            discovery = await api.discover_devices()
-            if isinstance(discovery, dict) and discovery.get("code") == 101:
-                api.apply_ts_from_response(discovery)
-                discovery = await api.discover_devices()
+            discovery = await api.discover_devices()  # corrects code 101 itself (R34)
             if isinstance(discovery, dict) and discovery.get("code") == 0:
                 msg = discovery.get("msg")
                 if isinstance(msg, list):

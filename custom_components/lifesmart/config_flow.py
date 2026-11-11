@@ -3,11 +3,11 @@ import asyncio
 import voluptuous as vol
 import logging
 import ipaddress
-from typing import Any, Dict
+from typing import Any, Dict, Mapping, Optional, Tuple
 from homeassistant import config_entries
 from homeassistant.const import CONF_HOST, CONF_TOKEN
 from .const import DOMAIN, DEFAULT_MODEL
-from .api import LifeSmartAPI
+from .api import LifeSmartAPI, REJECTED_CLOCK, REJECTED_TOKEN, rejection
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -15,6 +15,17 @@ _LOGGER = logging.getLogger(__name__)
 # is sent twice (api.py D18), so the form answers within 10 s as it did
 # before R25 — instead of 20 s — and survives one lost packet.
 FLOW_TIMEOUT = 5
+
+# Every message a form can show. tests/test_translations_contract.py checks
+# that these are exactly the keys translated under `config.error`, and that
+# each one is used.
+ERR_INVALID_HOST = "invalid_host"
+ERR_INVALID_TOKEN = "invalid_token"
+ERR_CANNOT_CONNECT = "cannot_connect"
+ERR_INVALID_AUTH = "invalid_auth"
+ERR_CLOCK_SKEW = "clock_skew"
+ERR_NO_DEVICES = "no_devices"
+ERR_UNEXPECTED_REPLY = "unexpected_reply"
 
 def _has_devices(msg) -> bool:
     if isinstance(msg, list):
@@ -70,12 +81,58 @@ def _validate_input(user_input: Dict[str, Any]) -> Dict[str, str]:
     try:
         user_input[CONF_HOST] = validate_host(user_input.get(CONF_HOST))
     except vol.Invalid:
-        errors[CONF_HOST] = "invalid_host"
+        errors[CONF_HOST] = ERR_INVALID_HOST
     try:
         user_input[CONF_TOKEN] = validate_token(user_input.get(CONF_TOKEN))
     except vol.Invalid:
-        errors[CONF_TOKEN] = "invalid_token"
+        errors[CONF_TOKEN] = ERR_INVALID_TOKEN
     return errors
+
+async def _async_try_hub(
+    host: str, model: str, token: str, *, need_devices: bool
+) -> Tuple[Optional[str], int]:
+    """Ask the hub for its device list (LI §3.3.2), as setup will.
+
+    Returns (error key, 0), or (None, the local UDP port that was bound).
+
+    R34: what the reply means. `send_command` has already corrected the
+    clock and asked again on code 101, so a 101 that comes back here is not
+    the clock (see api.rejection):
+    * no reply                          -> cannot_connect
+    * code 101 with the hub's time      -> invalid_auth (the token)
+    * code 101 without it               -> clock_skew (could not be corrected)
+    * code 0 with devices               -> success
+    * code 0 without devices            -> no_devices, where devices are needed
+    * anything else                     -> unexpected_reply
+
+    Before R34 every 101 was shown as "clock difference too large" and every
+    other odd reply as "no devices found".
+    """
+    api = LifeSmartAPI(
+        host=host, model=model, token=token, timeout=FLOW_TIMEOUT, local_port=0,
+    )
+    try:
+        try:
+            await api.async_start()
+            discovery = await api.discover_devices()
+        finally:
+            await api.async_stop()
+    except (asyncio.TimeoutError, OSError, KeyError, ValueError, TypeError) as err:
+        _LOGGER.debug("Config flow could not reach the hub: %s", err)
+        return ERR_CANNOT_CONNECT, 0
+
+    why = rejection(discovery)
+    if why == REJECTED_TOKEN:
+        return ERR_INVALID_AUTH, 0
+    if why == REJECTED_CLOCK:
+        return ERR_CLOCK_SKEW, 0
+    if isinstance(discovery, dict) and discovery.get("code") == 0:
+        if need_devices and not _has_devices(discovery.get("msg")):
+            return ERR_NO_DEVICES, 0
+        return None, api.local_port
+    _LOGGER.warning("Unexpected reply from the hub at %s: %s", host, discovery)
+    return ERR_UNEXPECTED_REPLY, 0
+
 
 DATA_SCHEMA = vol.Schema(
     {
@@ -84,6 +141,19 @@ DATA_SCHEMA = vol.Schema(
         vol.Required(CONF_TOKEN): str,
     }
 )
+
+# R34: the hub does not check the model (api.rejection), so a rejected
+# signature can only be put right with another token.
+REAUTH_SCHEMA = vol.Schema({vol.Required(CONF_TOKEN): str})
+
+
+def _form_values(source: Mapping[str, Any]) -> Dict[str, Any]:
+    """The three form fields out of an entry's data or a submission."""
+    return {
+        CONF_HOST: source.get(CONF_HOST),
+        "model": source.get("model", DEFAULT_MODEL),
+        CONF_TOKEN: source.get(CONF_TOKEN),
+    }
 
 
 class LifeSmartConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
@@ -97,55 +167,33 @@ class LifeSmartConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
     # like it worked and did nothing. Every setting lives in entry.data and is
     # changed through async_step_reconfigure, so there is one source of truth.
 
-    def __init__(self):
-        self._errors = {}
+    # R34: every form is redrawn with what the user typed
+    # (add_suggested_values_to_schema). Before, an error cleared the user
+    # form, and reset the reconfigure form to the stored values.
 
     async def async_step_user(self, user_input=None):
         errors: Dict[str, str] = {}
         if user_input is not None:
             # R18: field validation first; only touch the network when the
-            # input is well-formed. See _validate_input for why this is not
-            # inside the try below.
+            # input is well-formed. See _validate_input.
             errors = _validate_input(user_input)
         if user_input is not None and not errors:
-            try:
-                await self.async_set_unique_id(user_input[CONF_HOST])
-                self._abort_if_unique_id_configured()
+            await self.async_set_unique_id(user_input[CONF_HOST])
+            self._abort_if_unique_id_configured()
+            error, local_port = await _async_try_hub(
+                user_input[CONF_HOST], user_input["model"], user_input[CONF_TOKEN],
+                need_devices=True,
+            )
+            if error is None:
+                user_input["local_port"] = local_port
+                return self.async_create_entry(title="LifeSmart Hub", data=user_input)
+            errors["base"] = error
 
-                api = LifeSmartAPI(
-                    host=user_input[CONF_HOST],
-                    model=user_input["model"],
-                    token=user_input[CONF_TOKEN],
-                    timeout=FLOW_TIMEOUT,
-                    local_port=0
-                )
-
-                try:
-                    await api.async_start()
-                    discovery = await api.discover_devices()
-                    if isinstance(discovery, dict) and discovery.get("code") == 101:
-                        api.apply_ts_from_response(discovery)
-                        discovery = await api.discover_devices()
-                finally:
-                    await api.async_stop()
-
-                if (
-                    isinstance(discovery, dict)
-                    and discovery.get("code") == 0
-                    and _has_devices(discovery.get("msg"))
-                ):
-                    user_input["local_port"] = api.local_port
-                    return self.async_create_entry(title="LifeSmart Hub", data=user_input)
-                _LOGGER.warning("Discovery response: %s", discovery)
-                if isinstance(discovery, dict) and discovery.get("code") == 101:
-                    errors["base"] = "clock_skew"
-                else:
-                    errors["base"] = "no_devices"
-            except (asyncio.TimeoutError, OSError, KeyError, ValueError, TypeError) as err:
-                _LOGGER.debug("Config flow connection failed: %s", err)
-                errors["base"] = "cannot_connect"
-
-        return self.async_show_form(step_id="user", data_schema=DATA_SCHEMA, errors=errors)
+        return self.async_show_form(
+            step_id="user",
+            data_schema=self.add_suggested_values_to_schema(DATA_SCHEMA, user_input),
+            errors=errors,
+        )
 
     async def async_step_reconfigure(self, user_input=None):
         errors: Dict[str, str] = {}
@@ -154,46 +202,56 @@ class LifeSmartConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         if user_input is not None:
             errors = _validate_input(user_input)  # R18, same as async_step_user
         if user_input is not None and not errors:
-            try:
-                api = LifeSmartAPI(
-                    host=user_input[CONF_HOST],
-                    model=user_input.get("model", DEFAULT_MODEL),
-                    token=user_input[CONF_TOKEN],
-                    timeout=FLOW_TIMEOUT,
-                    local_port=0
+            error, local_port = await _async_try_hub(
+                user_input[CONF_HOST], user_input["model"], user_input[CONF_TOKEN],
+                need_devices=True,
+            )
+            if error is None:
+                user_input["local_port"] = local_port
+                return self.async_update_reload_and_abort(
+                    entry, data={**entry.data, **user_input}
                 )
+            errors["base"] = error
 
-                try:
-                    await api.async_start()
-                    discovery = await api.discover_devices()
-                    if isinstance(discovery, dict) and discovery.get("code") == 101:
-                        api.apply_ts_from_response(discovery)
-                        discovery = await api.discover_devices()
-                finally:
-                    await api.async_stop()
+        return self.async_show_form(
+            step_id="reconfigure",
+            data_schema=self.add_suggested_values_to_schema(
+                DATA_SCHEMA, _form_values(user_input if user_input is not None else entry.data)
+            ),
+            errors=errors,
+        )
 
-                if (
-                    isinstance(discovery, dict)
-                    and discovery.get("code") == 0
-                    and _has_devices(discovery.get("msg"))
-                ):
-                    user_input["local_port"] = api.local_port
+    async def async_step_reauth(self, entry_data: Mapping[str, Any]):
+        """Home Assistant starts this when setup or a poll raises
+        ConfigEntryAuthFailed: the hub rejected the token (R34)."""
+        return await self.async_step_reauth_confirm()
+
+    async def async_step_reauth_confirm(self, user_input=None):
+        """Ask for the token again; host and model stay as they are."""
+        errors: Dict[str, str] = {}
+        entry = self._get_reauth_entry()
+
+        if user_input is not None:
+            try:
+                token = validate_token(user_input.get(CONF_TOKEN))
+            except vol.Invalid:
+                errors[CONF_TOKEN] = ERR_INVALID_TOKEN
+            else:
+                # A hub that accepts the token but has no devices paired is
+                # still a working login.
+                error, _port = await _async_try_hub(
+                    entry.data[CONF_HOST], entry.data.get("model", DEFAULT_MODEL), token,
+                    need_devices=False,
+                )
+                if error is None:
                     return self.async_update_reload_and_abort(
-                        entry, data={**entry.data, **user_input}
+                        entry, data_updates={CONF_TOKEN: token}
                     )
-                _LOGGER.warning("Discovery response: %s", discovery)
-                if isinstance(discovery, dict) and discovery.get("code") == 101:
-                    errors["base"] = "clock_skew"
-                else:
-                    errors["base"] = "no_devices"
-            except (asyncio.TimeoutError, OSError, KeyError, ValueError, TypeError) as err:
-                _LOGGER.debug("Config flow reconfigure failed: %s", err)
-                errors["base"] = "cannot_connect"
+                errors["base"] = error
 
-        schema = vol.Schema({
-            vol.Required(CONF_HOST, default=entry.data.get(CONF_HOST)): str,
-            vol.Required("model", default=entry.data.get("model", DEFAULT_MODEL)): str,
-            vol.Required(CONF_TOKEN, default=entry.data.get(CONF_TOKEN)): str,
-        })
-        return self.async_show_form(step_id="reconfigure", data_schema=schema, errors=errors)
-
+        return self.async_show_form(
+            step_id="reauth_confirm",
+            data_schema=self.add_suggested_values_to_schema(REAUTH_SCHEMA, user_input),
+            errors=errors,
+            description_placeholders={"name": entry.title, "host": entry.data[CONF_HOST]},
+        )

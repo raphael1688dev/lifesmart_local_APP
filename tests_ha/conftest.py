@@ -28,16 +28,17 @@ DEVICES = [
 class Hub:
     """What the hub at HOST would answer.
 
-    It knows its model / token pair and its clock, like the real one: a
-    request signed with the wrong pair, or stamped more than five minutes
-    off, gets `{"code": 101, "msg": {"ts": <hub time>}}` (LI §3.2; the
-    wrong-signature case was observed on a Smart Station, PROGRESS R31).
+    It knows its token and its clock, like the real ones: a request signed
+    with another token, or stamped more than five minutes off, gets
+    `{"code": 101, "msg": {"ts": <hub time>}}` (LI §3.2 for the clock; the
+    wrong-token case was measured on a Smart Station and a DEFED hub,
+    PROGRESS R31 / R34). Like them it does not look at the model: a request
+    with any model and the right token is accepted.
     `replies` overrides that for the next requests: each item is returned,
     or raised if it is an exception.
     """
 
     def __init__(self) -> None:
-        self.model = MODEL
         self.token = TOKEN
         self.devices: Any = list(DEVICES)
         self.clock_ahead = 0
@@ -52,7 +53,7 @@ class Hub:
                 raise reply
             return reply
         hub_time = int(time.time()) + self.clock_ahead
-        signed_ok = (api.model, api.token) == (self.model, self.token)
+        signed_ok = api.token == self.token
         in_time = abs(int(time.time()) + api.ts_offset - hub_time) <= 300
         if not (signed_ok and in_time):
             return {"code": 101, "msg": {"ts": hub_time}}

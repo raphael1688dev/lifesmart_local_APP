@@ -112,20 +112,31 @@ def test_manifest_declares_integration_type():
 # --- config flow messages (R33) -------------------------------------------------
 
 def _flow_error_keys_in_code():
-    """Every error key config_flow.py can put on a form."""
+    """Every error key config_flow.py can put on a form: its ERR_* constants,
+    each of which must also be used somewhere in the file."""
     import ast
     tree = ast.parse((PKG / "config_flow.py").read_text())
-    keys = set()
-    for node in ast.walk(tree):
+    defined = {}
+    for node in tree.body:
         if (
             isinstance(node, ast.Assign)
-            and isinstance(node.targets[0], ast.Subscript)
-            and isinstance(node.targets[0].value, ast.Name)
-            and node.targets[0].value.id == "errors"
-            and isinstance(node.value, ast.Constant)
+            and isinstance(node.targets[0], ast.Name)
+            and node.targets[0].id.startswith("ERR_")
         ):
-            keys.add(node.value.value)
-    return keys
+            defined[node.targets[0].id] = node.value.value
+    used = {
+        node.id for node in ast.walk(tree)
+        if isinstance(node, ast.Name) and isinstance(node.ctx, ast.Load)
+    }
+    assert set(defined) <= used, f"defined but never shown: {set(defined) - used}"
+    # No error key is written as a bare string next to the constants.
+    literals = {
+        node.value for node in ast.walk(tree)
+        if isinstance(node, ast.Constant) and isinstance(node.value, str)
+    }
+    values = list(defined.values())
+    assert all(sum(v == lit for lit in literals) <= 1 for v in values)
+    return set(values)
 
 
 @pytest.mark.parametrize("lang", LANGS)
@@ -135,13 +146,25 @@ def test_config_flow_errors_match_the_translations(lang):
     unused since 2026-05; Home Assistant's test harness does not check
     custom integrations' translations, so this does."""
     used = _flow_error_keys_in_code()
-    assert used == {"invalid_host", "invalid_token", "cannot_connect", "clock_skew", "no_devices"}
+    assert used == {
+        "invalid_host", "invalid_token", "cannot_connect",
+        "invalid_auth", "clock_skew", "no_devices", "unexpected_reply",  # R34
+    }
     assert set(_load(lang)["config"]["error"]) == used
+
+
+@pytest.mark.parametrize("lang", LANGS)
+def test_reauth_form_is_translated(lang):
+    """R34: the reauth form asks for the token only and names the hub."""
+    step = _load(lang)["config"]["step"]["reauth_confirm"]
+    assert set(step["data"]) == {"token"} == set(step["data_description"])
+    assert "{host}" in step["description"]
 
 
 @pytest.mark.parametrize("lang", LANGS)
 def test_config_flow_abort_reasons(lang):
     """`already_configured` comes from Home Assistant's duplicate check and
     is not among the reasons it translates itself (2026.10+), so it stays
-    here. `reconfigure_successful` is translated by Home Assistant."""
+    here. `reconfigure_successful` and `reauth_successful` are translated by
+    Home Assistant (checked in 2026.11.1 strings.json, R34)."""
     assert set(_load(lang)["config"]["abort"]) == {"already_configured"}

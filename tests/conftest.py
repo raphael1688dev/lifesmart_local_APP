@@ -91,6 +91,13 @@ def _install_ha_stubs() -> None:
         pass
 
     exc.ConfigEntryNotReady = _ConfigEntryNotReady
+
+    # R34: raised by setup and by the coordinator when the hub rejects the
+    # token. A HomeAssistantError in HA too, and not a ConfigEntryNotReady.
+    class _ConfigEntryAuthFailed(_HomeAssistantError):
+        pass
+
+    exc.ConfigEntryAuthFailed = _ConfigEntryAuthFailed
     exc.HomeAssistantError = _HomeAssistantError
     exc.ServiceValidationError = _ServiceValidationError
     sys.modules["homeassistant.exceptions"] = exc

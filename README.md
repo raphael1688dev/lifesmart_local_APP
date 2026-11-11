@@ -45,11 +45,13 @@ The setup form asks for three values.
 |---|---|
 | IP Address | The hub's LAN address. A hostname also works. |
 | OpenDev Model | The OpenDev **model** string LifeSmart assigned to you, for example `OD_XXX_XXX`. This is not the model printed on the hub. The form pre-fills `OD_ALI_TECH`; replace it if your assigned model is different. |
-| Token | The OpenDev **token** that belongs to that model. The form accepts 16–64 letters and digits. |
+| Token | The OpenDev **token** from the LifeSmart app. The form accepts 16–64 letters and digits. |
 
-The model and token are issued by LifeSmart as a pair and must be used together (Local Interfaces spec §3.2). Before the hub answers, the same pair has to be entered in the LifeSmart app: **Smart → + → Smart Template Management → Add Template → Common Templates → OpenDev**, then fill in name, model, token and encrypt key (spec §1.1).
+The spec describes the model and token as a pair issued by LifeSmart (Local Interfaces spec §3.2). In practice the two hubs this was tested on — a Smart Station and a DEFED hub, firmware 1.0.94p10 — accept any model and check only the token. Enter the model you were given anyway; other firmware may differ. Before the hub answers, the same pair has to be entered in the LifeSmart app: **Smart → + → Smart Template Management → Add Template → Common Templates → OpenDev**, then fill in name, model, token and encrypt key (spec §1.1).
 
 **Changing settings later:** open the integration's menu and choose **Reconfigure** to change the IP, model or token. Home Assistant reloads the integration afterwards.
+
+**If the token changes:** when the hub starts rejecting the stored token, Home Assistant shows "Reauthentication required" on the integration and asks for the new token. The address and model stay as they are.
 
 ## Use cases
 
@@ -176,9 +178,12 @@ Nothing is changed on the hub. It stops sending events to Home Assistant within 
 
 - **Failed to connect to the hub.** Check the IP, that Home Assistant and the hub share a LAN segment, that UDP is not blocked, and that the OpenDev template is enabled in the LifeSmart app.
 - **Invalid token format.** The token must be 16–64 letters and digits, without spaces or symbols.
-- **Clock difference too large (code 101).** The integration corrects small offsets itself. If the error persists, sync the Home Assistant host's clock with NTP.
-- **No devices found on the hub.** The hub answered but reported no sub-devices. Check the model/token pair matches the one in the app's OpenDev template.
-- **Integration shows "Retrying setup".** The hub did not answer at startup. Home Assistant retries on its own; check power and network.
+- **The hub rejected this token (code 101).** The token is not the one set in the app's OpenDev template. The hub uses code 101 both for a clock that is more than five minutes off and for a wrong token; the integration takes the hub's time from that reply and asks again, so when this message appears the clock has been ruled out.
+- **The hub rejected the request (code 101) and did not report its time.** The clock could not be corrected, so the cause is either the clock or the token. Check the token, and sync the Home Assistant host's clock with NTP. This reply has not been seen on a real hub.
+- **"Reauthentication required" on the integration.** The hub rejected the stored token, at startup or while running. Open the notice and enter the current token. While it is pending, the hub's entities are unavailable.
+- **No devices found on the hub.** The hub accepted the token but has no sub-devices paired. Pair a device in the LifeSmart app first.
+- **The hub answered, but not with a device list.** The reply is written to the Home Assistant log; please attach it to an issue.
+- **Integration shows "Retrying setup".** The hub did not answer at startup, or answered the device list request with an error; the message next to it says which. Home Assistant retries on its own. If the hub is not answering, check power and network.
 - **Every entity of a hub shows "Unavailable".** The hub stopped answering. Check power and network; the entities return by themselves within 90 seconds of the hub answering. The log has one line for when it stopped and one for when it came back.
 - **One device's entities show "Unavailable".** The hub reports that device as offline (its Connectivity sensor shows *Disconnected*). Check the device's power or battery and its distance from the hub. If the device works in the LifeSmart app while Home Assistant shows it unavailable, please open an issue with the diagnostics file.
 - **Repairs: "LifeSmart hub is unreachable".** The hub has not answered for 5 minutes or more while Home Assistant was running. Check power and network. The notice disappears by itself once the hub answers again.

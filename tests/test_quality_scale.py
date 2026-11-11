@@ -50,7 +50,7 @@ def test_every_entity_class_uses_has_entity_name():
 
 
 @pytest.mark.parametrize("lang", LANGS)
-@pytest.mark.parametrize("step", ["user", "reconfigure"])
+@pytest.mark.parametrize("step", ["user", "reconfigure", "reauth_confirm"])
 def test_every_config_field_is_described(lang, step):
     """config-flow: `data_description` gives context for each input field."""
     form = json.loads((PKG / "translations" / lang).read_text(encoding="utf-8"))["config"]["step"][step]

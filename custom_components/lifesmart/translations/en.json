@@ -11,8 +11,8 @@
                 },
                 "data_description": {
                     "host": "The hub's address on your network: an IP address or a hostname.",
-                    "model": "The OpenDev model string LifeSmart issued together with your token, for example OD_XXX_XXX. This is not the model printed on the hub.",
-                    "token": "The OpenDev token that belongs to that model. 16 to 64 letters and digits."
+                    "model": "The OpenDev model string shown with your token in the LifeSmart app, for example OD_XXX_XXX. This is not the model printed on the hub. The hubs tested so far do not check it; only the token has to be right.",
+                    "token": "The OpenDev token from the LifeSmart app. 16 to 64 letters and digits."
                 }
             },
             "reconfigure": {
@@ -25,8 +25,18 @@
                 },
                 "data_description": {
                     "host": "The hub's address on your network: an IP address or a hostname.",
-                    "model": "The OpenDev model string LifeSmart issued together with your token, for example OD_XXX_XXX. This is not the model printed on the hub.",
-                    "token": "The OpenDev token that belongs to that model. 16 to 64 letters and digits."
+                    "model": "The OpenDev model string shown with your token in the LifeSmart app, for example OD_XXX_XXX. This is not the model printed on the hub. The hubs tested so far do not check it; only the token has to be right.",
+                    "token": "The OpenDev token from the LifeSmart app. 16 to 64 letters and digits."
+                }
+            },
+            "reauth_confirm": {
+                "title": "LifeSmart Hub: new token needed",
+                "description": "The hub at {host} rejected the stored token. Enter the current OpenDev token from the LifeSmart app. The address and the model stay as they are.",
+                "data": {
+                    "token": "Token"
+                },
+                "data_description": {
+                    "token": "The OpenDev token from the LifeSmart app. 16 to 64 letters and digits."
                 }
             }
         },
@@ -34,8 +44,10 @@
             "invalid_host": "Invalid IP address or hostname",
             "invalid_token": "Invalid token format",
             "cannot_connect": "Failed to connect to the hub",
-            "clock_skew": "Hub rejected the request (code 101): clock difference too large. Auto-correction failed — sync your HA system clock with NTP.",
-            "no_devices": "No devices found on the hub"
+            "invalid_auth": "The hub rejected this token (code 101, although the time was correct). Check the OpenDev token in the LifeSmart app.",
+            "clock_skew": "The hub rejected the request (code 101) and did not report its time, so the clock could not be corrected. Check the token, and sync the Home Assistant host's clock with NTP.",
+            "no_devices": "No devices found on the hub",
+            "unexpected_reply": "The hub answered, but not with a device list. The reply is in the Home Assistant log."
         },
         "abort": {
             "already_configured": "Device is already configured"

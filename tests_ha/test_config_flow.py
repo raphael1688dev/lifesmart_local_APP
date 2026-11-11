@@ -44,6 +44,15 @@ async def _submit(hass, result, **changes):
     )
 
 
+def _shown(result):
+    """What the form is redrawn with: the values Home Assistant pre-fills."""
+    return {
+        str(key): key.description["suggested_value"]
+        for key in result["data_schema"].schema
+        if key.description and "suggested_value" in key.description
+    }
+
+
 def _assert_created(result):
     assert result["type"] is FlowResultType.CREATE_ENTRY
     assert result["title"] == "LifeSmart Hub"
@@ -98,9 +107,17 @@ async def test_devices_as_a_dict_are_accepted(hass, hub, setup_entry):
     _assert_created(await _submit(hass, await _start(hass)))
 
 
+async def test_any_model_is_accepted(hass, hub, setup_entry):
+    """The hubs measured do not check the model (R34): a made-up one with
+    the right token goes through, as it did on the real hubs."""
+    result = await _submit(hass, await _start(hass), model="CLAUDE_CODE_W_RIGHT_TOKEN")
+    assert result["type"] is FlowResultType.CREATE_ENTRY
+    assert result["data"]["model"] == "CLAUDE_CODE_W_RIGHT_TOKEN"
+
+
 async def test_a_hub_clock_that_is_off_is_corrected(hass, hub, setup_entry):
     """LI §3.2: more than five minutes apart is code 101, with the hub's
-    time in the reply. The flow takes that time and asks again."""
+    time in the reply. The API takes that time and asks again."""
     hub.clock_ahead = 3600
     result = await _submit(hass, await _start(hass))
     _assert_created(result)
@@ -129,6 +146,10 @@ async def test_malformed_input_is_reported_per_field_without_calling_the_hub(
     assert result["step_id"] == "user"
     assert result["errors"] == errors
     assert hub.apis == []  # nothing was sent anywhere
+    # R34: the form comes back with what was typed (normalised), not empty.
+    typed = {**GOOD, **changes}
+    assert _shown(result)["model"] == typed["model"]
+    assert set(_shown(result)) == {"host", "model", "token"}
 
     _assert_created(await _submit(hass, result))
 
@@ -148,6 +169,7 @@ async def test_a_hub_that_does_not_answer(hass, hub, setup_entry, replies):
     assert result["type"] is FlowResultType.FORM
     assert result["errors"] == {"base": "cannot_connect"}
     assert hub.apis[0].stopped
+    assert _shown(result) == GOOD  # nothing to retype
 
     _assert_created(await _submit(hass, result))
 
@@ -176,11 +198,9 @@ async def test_a_socket_that_cannot_be_opened(hass, hub, setup_entry):
         {"code": 0, "msg": {"note": "not a device"}},
         {"code": 0, "msg": "nothing"},
         {"code": 0},
-        {"code": 10004, "msg": "error"},
-        "not even a dict",
     ],
 )
-async def test_an_answer_without_devices(hass, hub, setup_entry, reply):
+async def test_a_hub_with_no_devices(hass, hub, setup_entry, reply):
     hub.replies = [reply]
     result = await _submit(hass, await _start(hass))
     assert result["type"] is FlowResultType.FORM
@@ -190,16 +210,40 @@ async def test_an_answer_without_devices(hass, hub, setup_entry, reply):
     _assert_created(await _submit(hass, result))
 
 
-async def test_a_wrong_token_is_still_code_101_after_the_clock_correction(hass, hub, setup_entry):
-    """The hub answers a wrong signature with code 101 too (PROGRESS R31).
-    Today the flow reports that as `clock_skew`, which misleads; step 5 of
-    the quality-scale work changes the message. This pins the path, and
-    that the user gets through with the right token."""
+@pytest.mark.parametrize("reply", [{"code": 10004, "msg": "error"}, "not even a dict", None])
+async def test_an_answer_that_is_not_a_device_list(hass, hub, setup_entry, reply):
+    """R34: its own message. It used to be shown as "no devices found"."""
+    hub.replies = [reply]
+    result = await _submit(hass, await _start(hass))
+    assert result["type"] is FlowResultType.FORM
+    assert result["errors"] == {"base": "unexpected_reply"}
+    assert hub.apis[0].stopped
+
+    _assert_created(await _submit(hass, result))
+
+
+async def test_a_wrong_token_is_reported_as_the_token(hass, hub, setup_entry):
+    """R34. The hub answers a wrong token with code 101, the code for a
+    clock that is off. After taking the hub's time and asking again it is
+    still 101, so it is the token — not "sync your clock with NTP", which is
+    what this showed before."""
     result = await _submit(hass, await _start(hass), token="WRONGTOKEN0000000000")
     assert result["type"] is FlowResultType.FORM
-    assert result["errors"] == {"base": "clock_skew"}
+    assert result["errors"] == {"base": "invalid_auth"}
     assert hub.apis[0].sent == ["eps", "eps"]
     assert hub.apis[0].stopped
+    assert _shown(result) == {**GOOD, "token": "WRONGTOKEN0000000000"}
+
+    _assert_created(await _submit(hass, result))
+
+
+async def test_code_101_without_the_hubs_time(hass, hub, setup_entry):
+    """Not seen on a real hub. Nothing can be corrected, so the message
+    names both possible causes."""
+    hub.replies = [{"code": 101}]
+    result = await _submit(hass, await _start(hass))
+    assert result["errors"] == {"base": "clock_skew"}
+    assert hub.apis[0].sent == ["eps"]
 
     _assert_created(await _submit(hass, result))
 
@@ -228,7 +272,7 @@ async def _start_reconfigure(hass, entry):
 async def test_reconfigure_form_is_prefilled_from_the_entry(hass, hub, setup_entry):
     entry = _existing_entry(hass)
     result = await _start_reconfigure(hass, entry)
-    assert result["data_schema"]({}) == GOOD
+    assert _shown(result) == GOOD
 
 
 async def test_reconfigure_updates_the_entry_and_reloads(hass, hub, setup_entry):
@@ -251,7 +295,7 @@ async def test_reconfigure_defaults_to_the_stock_model_for_an_old_entry(hass, hu
     )
     entry.add_to_hass(hass)
     result = await _start_reconfigure(hass, entry)
-    assert result["data_schema"]({})["model"] == DEFAULT_MODEL
+    assert _shown(result) == {"host": HOST, "model": DEFAULT_MODEL, "token": TOKEN}
 
 
 @pytest.mark.parametrize(
@@ -271,6 +315,9 @@ async def test_reconfigure_reports_malformed_input_per_field(
     assert result["errors"] == errors
     assert hub.apis == []
     assert entry.data == ENTRY_DATA  # untouched
+    # R34: redrawn with what was typed, not reset to the stored values.
+    assert _shown(result)["model"] == MODEL
+    assert _shown(result) != GOOD
 
     result = await _submit(hass, result)
     assert result["reason"] == "reconfigure_successful"
@@ -282,7 +329,8 @@ async def test_reconfigure_reports_malformed_input_per_field(
         ([asyncio.TimeoutError(), asyncio.TimeoutError()], "cannot_connect"),
         ([OSError("down")], "cannot_connect"),
         ([{"code": 0, "msg": []}], "no_devices"),
-        ([{"code": 10004}], "no_devices"),
+        ([{"code": 10004}], "unexpected_reply"),
+        ([{"code": 101}], "clock_skew"),
     ],
 )
 async def test_reconfigure_errors_keep_the_entry_and_can_be_corrected(
@@ -303,11 +351,11 @@ async def test_reconfigure_errors_keep_the_entry_and_can_be_corrected(
 
 
 async def test_reconfigure_with_a_wrong_token(hass, hub, setup_entry):
-    """Same code-101 path as in the user step; see the note there."""
     entry = _existing_entry(hass)
     result = await _submit(hass, await _start_reconfigure(hass, entry), token="WRONGTOKEN0000000000")
-    assert result["errors"] == {"base": "clock_skew"}
+    assert result["errors"] == {"base": "invalid_auth"}
     assert entry.data == ENTRY_DATA
+    assert _shown(result)["token"] == "WRONGTOKEN0000000000"
 
     result = await _submit(hass, result)
     assert result["reason"] == "reconfigure_successful"
@@ -319,6 +367,89 @@ async def test_reconfigure_corrects_a_hub_clock_that_is_off(hass, hub, setup_ent
     result = await _submit(hass, await _start_reconfigure(hass, entry))
     assert result["reason"] == "reconfigure_successful"
     assert hub.apis[0].sent == ["eps", "eps"]
+
+
+# --- reauth (R34): the hub rejected the stored token ----------------------------------
+
+async def _start_reauth(hass, entry):
+    result = await entry.start_reauth_flow(hass)
+    assert result["type"] is FlowResultType.FORM
+    assert result["step_id"] == "reauth_confirm"
+    assert result["errors"] == {}
+    assert result["description_placeholders"]["host"] == HOST
+    return result
+
+
+async def _submit_token(hass, result, token):
+    return await hass.config_entries.flow.async_configure(result["flow_id"], {"token": token})
+
+
+async def test_reauth_asks_for_the_token_only(hass, hub, setup_entry):
+    entry = _existing_entry(hass, token="OLDTOKEN000000000000")
+    result = await _start_reauth(hass, entry)
+    assert [str(key) for key in result["data_schema"].schema] == ["token"]
+
+
+async def test_reauth_stores_the_new_token_and_reloads(hass, hub, setup_entry):
+    entry = _existing_entry(hass, token="OLDTOKEN000000000000", extra="kept")
+    result = await _submit_token(hass, await _start_reauth(hass, entry), f" {TOKEN} ")
+    assert result["type"] is FlowResultType.ABORT
+    assert result["reason"] == "reauth_successful"
+    assert entry.data == {**ENTRY_DATA, "extra": "kept"}   # host, model, port untouched
+    (api,) = hub.apis
+    assert (api.host, api.model, api.token) == (HOST, MODEL, TOKEN)
+    assert api.stopped
+    await hass.async_block_till_done()
+    setup_entry.assert_awaited_once()
+
+
+async def test_reauth_uses_the_stock_model_for_an_old_entry(hass, hub, setup_entry):
+    entry = MockConfigEntry(
+        domain=DOMAIN, version=2, unique_id=HOST, data={"host": HOST, "token": "OLDTOKEN000000000000"},
+    )
+    entry.add_to_hass(hass)
+    result = await _submit_token(hass, await _start_reauth(hass, entry), TOKEN)
+    assert result["reason"] == "reauth_successful"
+    assert hub.apis[0].model == DEFAULT_MODEL
+    assert "model" not in entry.data
+
+
+async def test_reauth_accepts_a_hub_with_no_devices(hass, hub, setup_entry):
+    """The token is what is being checked; a hub with nothing paired that
+    accepts it is a working login."""
+    entry = _existing_entry(hass, token="OLDTOKEN000000000000")
+    hub.devices = []
+    result = await _submit_token(hass, await _start_reauth(hass, entry), TOKEN)
+    assert result["reason"] == "reauth_successful"
+
+
+@pytest.mark.parametrize(
+    ("token", "replies", "errors"),
+    [
+        ("short", [], {"token": "invalid_token"}),
+        ("STILLWRONG0000000000", [], {"base": "invalid_auth"}),
+        (TOKEN, [asyncio.TimeoutError(), asyncio.TimeoutError()], {"base": "cannot_connect"}),
+        (TOKEN, [{"code": 10004}], {"base": "unexpected_reply"}),
+        (TOKEN, [{"code": 101}], {"base": "clock_skew"}),
+    ],
+)
+async def test_reauth_errors_keep_the_entry_and_can_be_corrected(
+    hass, hub, setup_entry, token, replies, errors
+):
+    old = "OLDTOKEN000000000000"
+    entry = _existing_entry(hass, token=old)
+    hub.replies = list(replies)
+    result = await _submit_token(hass, await _start_reauth(hass, entry), token)
+    assert result["type"] is FlowResultType.FORM
+    assert result["step_id"] == "reauth_confirm"
+    assert result["errors"] == errors
+    assert entry.data["token"] == old
+    assert _shown(result) == {"token": token}
+    setup_entry.assert_not_awaited()
+
+    result = await _submit_token(hass, result, TOKEN)
+    assert result["reason"] == "reauth_successful"
+    assert entry.data["token"] == TOKEN
 
 
 # --- the validators' branches a form cannot reach -------------------------------------

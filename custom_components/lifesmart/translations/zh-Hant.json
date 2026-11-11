@@ -11,8 +11,8 @@
                 },
                 "data_description": {
                     "host": "中樞在區域網路上的位址，可以是 IP 或主機名稱。",
-                    "model": "LifeSmart 與 token 一起核發的 OpenDev model 字串，例如 OD_XXX_XXX。這不是印在中樞上的型號。",
-                    "token": "與該 model 配對的 OpenDev token，16 到 64 個英數字。"
+                    "model": "LifeSmart app 裡與 token 一起顯示的 OpenDev model 字串，例如 OD_XXX_XXX。這不是印在中樞上的型號。目前測過的中樞不會檢查這個值，只有 token 必須正確。",
+                    "token": "LifeSmart app 裡的 OpenDev token，16 到 64 個英數字。"
                 }
             },
             "reconfigure": {
@@ -25,8 +25,18 @@
                 },
                 "data_description": {
                     "host": "中樞在區域網路上的位址，可以是 IP 或主機名稱。",
-                    "model": "LifeSmart 與 token 一起核發的 OpenDev model 字串，例如 OD_XXX_XXX。這不是印在中樞上的型號。",
-                    "token": "與該 model 配對的 OpenDev token，16 到 64 個英數字。"
+                    "model": "LifeSmart app 裡與 token 一起顯示的 OpenDev model 字串，例如 OD_XXX_XXX。這不是印在中樞上的型號。目前測過的中樞不會檢查這個值，只有 token 必須正確。",
+                    "token": "LifeSmart app 裡的 OpenDev token，16 到 64 個英數字。"
+                }
+            },
+            "reauth_confirm": {
+                "title": "LifeSmart 中樞：需要新的 token",
+                "description": "位於 {host} 的中樞拒絕了目前儲存的 token。請輸入 LifeSmart app 裡現在的 OpenDev token。位址與 model 維持不變。",
+                "data": {
+                    "token": "Token"
+                },
+                "data_description": {
+                    "token": "LifeSmart app 裡的 OpenDev token，16 到 64 個英數字。"
                 }
             }
         },
@@ -34,8 +44,10 @@
             "invalid_host": "IP 位址或主機名稱格式錯誤",
             "invalid_token": "Token 格式錯誤",
             "cannot_connect": "無法連線至中樞",
-            "clock_skew": "中樞拒絕請求（代碼 101）：時鐘差異過大。自動校正失敗 — 請以 NTP 同步 HA 主機時間。",
-            "no_devices": "中樞上找不到任何裝置"
+            "invalid_auth": "中樞拒絕了這個 token（代碼 101，但時間是正確的）。請確認 LifeSmart app 裡的 OpenDev token。",
+            "clock_skew": "中樞拒絕請求（代碼 101），而且沒有回報它的時間，無法校正時鐘。請確認 token，並以 NTP 同步 Home Assistant 主機的時間。",
+            "no_devices": "中樞上找不到任何裝置",
+            "unexpected_reply": "中樞有回應，但回的不是裝置清單。回覆內容記在 Home Assistant 的日誌裡。"
         },
         "abort": {
             "already_configured": "裝置已設定過"

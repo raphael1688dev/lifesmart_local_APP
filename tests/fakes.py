@@ -289,6 +289,11 @@ class FakeEntry(SimpleNamespace):
     def async_create_background_task(self, hass, coro, name):
         self.background.append(coro)
 
+    def async_start_reauth(self, hass, context=None, data=None):
+        """As HA: asks for a reauth flow. HA keeps one per entry; the fake
+        counts the requests."""
+        self.reauth_requests = getattr(self, "reauth_requests", 0) + 1
+
 
 def make_env(monkeypatch) -> SimpleNamespace:
     """Patch the integration's collaborators; return the handles tests inspect."""

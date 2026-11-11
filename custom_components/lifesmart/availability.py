@@ -48,19 +48,22 @@ class HubAvailability:
         if self._available:
             return
         self._available = True
-        _LOGGER.info("LifeSmart hub %s is answering again", self._host)
+        _LOGGER.info("LifeSmart hub %s is available again", self._host)
         self._notify()
 
     @callback
     def record_failure(self, reason: object = None) -> None:
-        """The hub did not answer (timeout or socket error)."""
+        """The hub did not answer, or answers but refuses us (R34: token).
+
+        `reason` completes "LifeSmart hub <host> is unavailable: ...".
+        """
         self._failures += 1
         if not self._available or self._failures < self._threshold:
             return
         self._available = False
         _LOGGER.info(
-            "LifeSmart hub %s is not answering (%s); its entities are unavailable until it does",
-            self._host, reason if reason else "no reply",
+            "LifeSmart hub %s is unavailable: %s. Its entities are unavailable until that clears",
+            self._host, reason if reason else "it is not answering",
         )
         self._notify()
 

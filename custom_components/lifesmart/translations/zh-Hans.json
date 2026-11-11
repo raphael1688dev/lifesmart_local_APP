@@ -11,8 +11,8 @@
                 },
                 "data_description": {
                     "host": "中枢在局域网上的地址，可以是 IP 或主机名。",
-                    "model": "LifeSmart 与 token 一起签发的 OpenDev model 字符串，例如 OD_XXX_XXX。这不是印在中枢上的型号。",
-                    "token": "与该 model 配对的 OpenDev token，16 到 64 个字母或数字。"
+                    "model": "LifeSmart app 里与 token 一起显示的 OpenDev model 字符串，例如 OD_XXX_XXX。这不是印在中枢上的型号。目前测试过的中枢不会检查这个值，只有 token 必须正确。",
+                    "token": "LifeSmart app 里的 OpenDev token，16 到 64 个字母或数字。"
                 }
             },
             "reconfigure": {
@@ -25,8 +25,18 @@
                 },
                 "data_description": {
                     "host": "中枢在局域网上的地址，可以是 IP 或主机名。",
-                    "model": "LifeSmart 与 token 一起签发的 OpenDev model 字符串，例如 OD_XXX_XXX。这不是印在中枢上的型号。",
-                    "token": "与该 model 配对的 OpenDev token，16 到 64 个字母或数字。"
+                    "model": "LifeSmart app 里与 token 一起显示的 OpenDev model 字符串，例如 OD_XXX_XXX。这不是印在中枢上的型号。目前测试过的中枢不会检查这个值，只有 token 必须正确。",
+                    "token": "LifeSmart app 里的 OpenDev token，16 到 64 个字母或数字。"
+                }
+            },
+            "reauth_confirm": {
+                "title": "LifeSmart 中枢：需要新的 token",
+                "description": "位于 {host} 的中枢拒绝了当前保存的 token。请输入 LifeSmart app 里现在的 OpenDev token。地址与 model 保持不变。",
+                "data": {
+                    "token": "Token"
+                },
+                "data_description": {
+                    "token": "LifeSmart app 里的 OpenDev token，16 到 64 个字母或数字。"
                 }
             }
         },
@@ -34,8 +44,10 @@
             "invalid_host": "IP 地址或主机名格式错误",
             "invalid_token": "Token 格式错误",
             "cannot_connect": "无法连接到中枢",
-            "clock_skew": "中枢拒绝请求（代码 101）：时钟差异过大。自动校正失败 — 请通过 NTP 同步 HA 主机时间。",
-            "no_devices": "中枢上未找到任何设备"
+            "invalid_auth": "中枢拒绝了这个 token（代码 101，但时间是正确的）。请确认 LifeSmart app 里的 OpenDev token。",
+            "clock_skew": "中枢拒绝请求（代码 101），而且没有报告它的时间，无法校正时钟。请确认 token，并通过 NTP 同步 Home Assistant 主机的时间。",
+            "no_devices": "中枢上未找到任何设备",
+            "unexpected_reply": "中枢有响应，但返回的不是设备列表。回复内容记录在 Home Assistant 的日志里。"
         },
         "abort": {
             "already_configured": "设备已配置"
