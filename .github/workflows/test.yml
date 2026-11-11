@@ -38,7 +38,9 @@ jobs:
         run: pip install --upgrade pip pytest
 
       - name: Run pytest
-        run: pytest tests/ -v
+        # -W error: a warning (e.g. a coroutine that was never awaited) fails
+        # the run, as it does locally (R30).
+        run: pytest tests/ -v -W error
 
   compile:
     name: py_compile (full integration)

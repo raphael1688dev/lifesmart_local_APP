@@ -61,6 +61,12 @@ async def async_setup_entry(
             if not isinstance(remote_list, list):
                 _LOGGER.warning("Failed to load remote list from hub")
                 remote_list = []
+        # R30: lets lifesmart.send_keys route a remote_id to the hub that has it.
+        entry_data["remote_ids"] = {
+            item["remote"]["id"]
+            for item in remote_list
+            if isinstance(item, dict) and isinstance(item.get("remote"), dict) and "id" in item["remote"]
+        }
         
         device_remotes = {}
         

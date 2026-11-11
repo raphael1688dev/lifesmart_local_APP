@@ -1,6 +1,13 @@
 send_keys:
-  description: Send IR key(s) to a remote.
+  name: Send IR keys
+  description: Send IR key(s) to a remote. With several hubs, the key goes to the hub that has the remote.
   fields:
+    config_entry_id:
+      name: Hub
+      description: Optional. Send through this hub only.
+      selector:
+        config_entry:
+          integration: lifesmart
     remote_id:
       description: Remote ID returned by the hub.
       example: "AI_IR_xxxx_xxxxxxxx"

@@ -44,6 +44,24 @@
         }
     },
     "services": {
+        "send_keys": {
+            "name": "Send IR keys",
+            "description": "Send IR key(s) to a remote. With several hubs, the key goes to the hub that has the remote.",
+            "fields": {
+                "config_entry_id": {
+                    "name": "Hub",
+                    "description": "Optional. Send through this hub only."
+                },
+                "remote_id": {
+                    "name": "Remote ID",
+                    "description": "Remote ID returned by the hub."
+                },
+                "keys": {
+                    "name": "Keys",
+                    "description": "One key or a list of keys to send."
+                }
+            }
+        },
         "set_hub_timezone": {
             "name": "Set hub time zone",
             "description": "Set the hub's time zone and daylight saving time (cfg:timezone).",

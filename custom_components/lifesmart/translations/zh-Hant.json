@@ -44,6 +44,24 @@
         }
     },
     "services": {
+        "send_keys": {
+            "name": "傳送紅外線按鍵",
+            "description": "向遙控器傳送紅外線按鍵。有多台中樞時，會送到擁有該遙控器的中樞。",
+            "fields": {
+                "config_entry_id": {
+                    "name": "中樞",
+                    "description": "選填。只透過這台中樞傳送。"
+                },
+                "remote_id": {
+                    "name": "遙控器 ID",
+                    "description": "中樞回傳的遙控器 ID。"
+                },
+                "keys": {
+                    "name": "按鍵",
+                    "description": "一個按鍵，或要依序傳送的按鍵清單。"
+                }
+            }
+        },
         "set_hub_timezone": {
             "name": "設定中樞時區",
             "description": "設定中樞的時區與日光節約時間（cfg:timezone）。",

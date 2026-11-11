@@ -148,6 +148,9 @@ def _install_ha_stubs() -> None:
         def __init__(self, *a, **kw) -> None:
             self.data = None
             self.listeners: list = []  # R25: tests fire these by hand
+            # R30: a coordinator that does not pass `config_entry` gets None
+            # here; test_r28_review.py checks both coordinators pass the entry.
+            self.config_entry = kw.get("config_entry")
 
         def async_add_listener(self, cb, *a, **kw):
             self.listeners.append(cb)

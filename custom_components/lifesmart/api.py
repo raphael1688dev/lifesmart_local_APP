@@ -48,8 +48,10 @@ class LifeSmartAPI:
         * nested objects are left out, like arrays ("If the args parameter is
           in array or list format, this parameter is not used during
           signature calculation"). str() gave `{'type': 128}` for doscene.
-        The spec does not spell out either case and neither is verified on
-        hardware; the old forms were certainly wrong.
+        The spec does not spell out either case. Booleans are confirmed on
+        hardware (2026-11-11: cfg:timezone with `summer:false` answered code
+        0 on a Smart Station and on a DEFED hub, firmware 1.0.94p10). Leaving
+        out nested objects is not verified; the old form was certainly wrong.
         """
         sortable_items = []
         for k, v in args.items():

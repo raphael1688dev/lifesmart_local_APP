@@ -249,14 +249,14 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> None:
     # R28: only cfg:getver is read here. cfg:timezone is read in the
     # background once setup is done — a hub that does not answer it would
     # otherwise hold up every start for two timeouts.
-    hub_coordinator = LifeSmartHubCoordinator(hass, api, entry.data["host"])
+    hub_coordinator = LifeSmartHubCoordinator(hass, entry, api, entry.data["host"])
     hub_info = await hub_coordinator.async_fetch(include_timezone=False)
     hub_coordinator.async_set_updated_data(hub_info)
     _async_update_version_issue(hass, entry, hub_info)
 
     # D15 (2026-05-24): single coordinator per hub replaces the per-entity
     # `async_track_time_interval` polling pattern (HA 2026.5 規範要求).
-    coordinator = LifeSmartCoordinator(hass, api, entry.data["host"])
+    coordinator = LifeSmartCoordinator(hass, entry, api, entry.data["host"])
     # Seed coordinator with discovery data we already have so the first
     # refresh doesn't block setup.
     coordinator.async_set_updated_data({
@@ -565,15 +565,44 @@ def _async_register_services(hass: HomeAssistant) -> None:
     """Called once from async_setup."""
 
     async def _handle_send_keys(call: ServiceCall) -> None:
+        """Send IR keys through the hub that has the remote.
+
+        R30: this used to send every key to every loaded hub, ignore what
+        the hubs answered, and do nothing at all when no hub was loaded.
+        """
         remote_id = call.data["remote_id"]
         keys = call.data["keys"]
         keys_to_send = [keys] if isinstance(keys, str) else list(keys)
 
-        for entry_data in hass.data.get(DOMAIN, {}).get("entries", {}).values():
-            api = entry_data.get("api")
-            if isinstance(api, LifeSmartAPI):
-                for key in keys_to_send:
-                    await api.send_remote_key(remote_id, key)
+        if call.data.get(ATTR_CONFIG_ENTRY_ID) is not None:
+            _entry, entry_data = _entry_for_call(hass, call)
+            targets = [entry_data]
+        else:
+            loaded = list(hass.data.get(DOMAIN, {}).get("entries", {}).values())
+            if not loaded:
+                raise ServiceValidationError("No LifeSmart hub is loaded")
+            # remote.py records which remotes each hub has; a remote_id no
+            # hub lists (e.g. added in the app since setup) goes to them all.
+            owners = [e for e in loaded if remote_id in e.get("remote_ids", ())]
+            targets = owners or loaded
+
+        for key in keys_to_send:
+            accepted = False
+            last: Any = None
+            for entry_data in targets:
+                try:
+                    reply = await entry_data["api"].send_remote_key(remote_id, key)
+                except (asyncio.TimeoutError, OSError) as err:
+                    last = err
+                    continue
+                if isinstance(reply, dict) and reply.get("code") == 0:
+                    accepted = True
+                else:
+                    last = reply
+            if not accepted:
+                raise HomeAssistantError(
+                    f"No hub accepted key {key!r} for remote {remote_id}: {last!r}"
+                )
 
     async def _handle_set_hub_timezone(call: ServiceCall) -> None:
         _entry, entry_data = _entry_for_call(hass, call)
@@ -616,6 +645,7 @@ def _async_register_services(hass: HomeAssistant) -> None:
         "send_keys",
         _handle_send_keys,
         schema=vol.Schema({
+            vol.Optional(ATTR_CONFIG_ENTRY_ID): str,
             vol.Required("remote_id"): str,
             vol.Required("keys"): vol.Any(str, [str]),
         }),

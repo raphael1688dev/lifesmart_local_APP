@@ -102,6 +102,9 @@ class FakeAPI:
     def reboot_hub(self):
         return self._record("reboot_hub")
 
+    def send_remote_key(self, remote_id, key):
+        return self._record("send_remote_key", remote_id, key)
+
 
 class FakeDevice(SimpleNamespace):
     """A device registry entry as of HA 2026.11: one `config_entry_id`.

@@ -98,7 +98,7 @@ data:
     - vol_up
 ```
 
-The integration also offers `lifesmart.send_keys`, which takes a hub `remote_id` and one key or a list of keys.
+The integration also offers `lifesmart.send_keys`, which takes a hub `remote_id` and one key or a list of keys. With several hubs the key goes to the hub that has that remote; pass `config_entry_id` to pick the hub yourself. The action fails if no hub is loaded or no hub accepts the key.
 
 ## Hub actions
 

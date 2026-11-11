@@ -189,3 +189,15 @@ def test_action_says_so_when_the_hub_entry_is_not_loaded(env):
     call = SimpleNamespace(data={"config_entry_id": "entry1", "timezone": 8, "daylight_saving": False})
     with pytest.raises(ServiceValidationError):
         asyncio.run(handler(call))
+
+
+# --- R30: coordinators get their config entry explicitly ----------------------------
+
+def test_coordinators_are_given_the_config_entry(env):
+    """Not relying on HA's ContextVar fallback (reported as an error for core
+    integrations, tolerated for custom ones)."""
+    setup(env)
+    data = entry_data(env)
+    assert data["coordinator"].config_entry is env.entry
+    assert data["hub_coordinator"].config_entry is env.entry
+

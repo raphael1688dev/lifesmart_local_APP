@@ -20,6 +20,7 @@ import logging
 from datetime import timedelta
 from typing import Any, Dict, Optional
 
+from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
 
@@ -35,10 +36,16 @@ DEFAULT_UPDATE_INTERVAL = timedelta(minutes=15)
 class LifeSmartCoordinator(DataUpdateCoordinator[Dict[str, Dict[str, Any]]]):
     """Per-hub coordinator. Data shape: {me: device_dict} after each refresh."""
 
-    def __init__(self, hass: HomeAssistant, api: LifeSmartAPI, host: str) -> None:
+    def __init__(
+        self, hass: HomeAssistant, entry: ConfigEntry, api: LifeSmartAPI, host: str
+    ) -> None:
+        # R30: the config entry is passed explicitly. Without it the
+        # coordinator falls back to a ContextVar, which HA reports as an
+        # error for core integrations and only tolerates for custom ones.
         super().__init__(
             hass,
             _LOGGER,
+            config_entry=entry,
             name=f"lifesmart_{host}",
             update_interval=DEFAULT_UPDATE_INTERVAL,
         )
@@ -120,10 +127,13 @@ class LifeSmartHubCoordinator(DataUpdateCoordinator[Dict[str, Any]]):
     rather show the last known firmware than go blank.
     """
 
-    def __init__(self, hass: HomeAssistant, api: LifeSmartAPI, host: str) -> None:
+    def __init__(
+        self, hass: HomeAssistant, entry: ConfigEntry, api: LifeSmartAPI, host: str
+    ) -> None:
         super().__init__(
             hass,
             _LOGGER,
+            config_entry=entry,  # R30: explicit, see LifeSmartCoordinator
             name=f"lifesmart_hub_{host}",
             update_interval=HUB_INFO_UPDATE_INTERVAL,
         )

@@ -44,6 +44,24 @@
         }
     },
     "services": {
+        "send_keys": {
+            "name": "发送红外按键",
+            "description": "向遥控器发送红外按键。有多台中枢时，会发到拥有该遥控器的中枢。",
+            "fields": {
+                "config_entry_id": {
+                    "name": "中枢",
+                    "description": "选填。只通过这台中枢发送。"
+                },
+                "remote_id": {
+                    "name": "遥控器 ID",
+                    "description": "中枢返回的遥控器 ID。"
+                },
+                "keys": {
+                    "name": "按键",
+                    "description": "一个按键，或要依次发送的按键列表。"
+                }
+            }
+        },
         "set_hub_timezone": {
             "name": "设置中枢时区",
             "description": "设置中枢的时区与夏令时（cfg:timezone）。",
