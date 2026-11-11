@@ -111,16 +111,16 @@ def test_failed_unload_propagates_and_keeps_the_entry(env):
 
 # --- R23: repair issues are linked to the entry ---------------------------------
 
-def test_hub_version_issue_is_linked_to_the_entry(env, monkeypatch):
+def test_an_unreadable_hub_version_raises_no_repair_issue(env, monkeypatch):
+    """R36 (quality scale `repair-issues`): the user cannot act on it, so no
+    issue. Up to 20261111r6 this raised `hub_version_unknown`; an issue left
+    by such a version is deleted at setup."""
     monkeypatch.setattr(FakeAPI, "get_hub_version",
                         lambda self: asyncio.sleep(0, {"code": 1}))
     _setup(env)
-    # Raised at setup and again, unchanged, when the background time zone
-    # read notifies the listeners — HA treats an identical create as a no-op.
-    assert {issue_id for issue_id, _ in env.issues.created} == {"hub_version_unknown_entry1"}
-    issue_id, kw = env.issues.created[0]
-    assert kw["config_entry_id"] == "entry1"
-    assert kw["translation_key"] == "hub_version_unknown"
+    assert env.issues.created == []
+    assert "hub_version_unknown_entry1" in env.issues.deleted
+    assert _runtime(env).hub_info["version_ok"] is False   # the sensors show "unknown"
 
 
 def test_hub_unreachable_issue_is_linked_and_survives_unload(env):

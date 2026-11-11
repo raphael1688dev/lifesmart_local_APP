@@ -73,7 +73,7 @@ The spec describes the model and token as a pair issued by LifeSmart (Local Inte
 | `remote` | `SL_P_IR` SPOT (mini), 922 RF version | One remote entity per SPOT, carrying every IR remote configured on it |
 | `sensor` | `SL_NATURE` | Temperature from channel `T` (raw value ÷ 10 = °C) |
 | `sensor` | `SL_SW_ND*`, `SL_MC_ND*`, `SL_SC_BB*` (channel `V`); `SL_P` (channel `P8`) | Battery, only when the device actually reports the channel |
-| `sensor` | Every sub-device that reports `lDbm` | Signal strength in dBm (diagnostic) |
+| `sensor` | Every sub-device that reports `lDbm` | Signal strength in dBm (diagnostic). **Disabled by default** from `20261111r7`: enable it on the device page if you want it. Sensors that already existed stay enabled. |
 | `binary_sensor` | Every sub-device that reports `stat` | Connectivity (diagnostic) |
 
 `SL_NATURE` temperature is not in the spec. The firmware sends it anyway, so it is supported.
@@ -188,7 +188,8 @@ Nothing is changed on the hub. It stops sending events to Home Assistant within 
 - **Every entity of a hub shows "Unavailable".** The hub stopped answering. Check power and network; the entities return by themselves within 90 seconds of the hub answering. The log has one line for when it stopped and one for when it came back.
 - **One device's entities show "Unavailable".** The hub reports that device as offline (its Connectivity sensor shows *Disconnected*). Check the device's power or battery and its distance from the hub. If the device works in the LifeSmart app while Home Assistant shows it unavailable, please open an issue with the diagnostics file.
 - **Repairs: "LifeSmart hub is unreachable".** The hub has not answered for 5 minutes or more while Home Assistant was running. Check power and network. The notice disappears by itself once the hub answers again.
-- **Repairs: "Cannot read hub firmware version".** The hub sensors keep the last values read, or stay empty if none were. Everything else keeps working. The integration tries again once a day.
+- **The hub's Firmware version, OS version or Model sensor shows "Unknown".** The hub did not answer the version request. Everything else keeps working, a warning is written to the log, and the integration asks again once a day. (Versions before `20261111r7` also raised a repair notice for this; it told you nothing you could act on and is gone.)
+- **A device you removed from the hub is still listed.** Open the device's page, choose **⋮ → Delete**. This is offered for devices the hub no longer lists; a device that is still on the hub cannot be deleted this way.
 - **A newly paired device does not appear.** The integration reloads about 10 seconds after the hub reports a paired or removed device. If the device still does not appear, reload the integration from its menu.
 - **Reporting a bug.** Attach the diagnostics file from the integration's menu (**⋮ → Download diagnostics**). Token and signatures are redacted. For logs, add:
 

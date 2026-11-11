@@ -57,10 +57,6 @@
         "hub_unreachable": {
             "title": "LifeSmart 中枢无法连接",
             "description": "中枢 {host} 已有 {minutes} 分钟没有回应。请确认中枢已上电、IP 地址正确、且与 HA 在同一网段。中枢恢复回应后此通知会自动消失。"
-        },
-        "hub_version_unknown": {
-            "title": "无法读取中枢固件版本",
-            "description": "`cfg:getver` 未返回预期内容。中枢固件版本／系统版本／型号 sensor 将显示为空，但其他功能不受影响。"
         }
     },
     "services": {

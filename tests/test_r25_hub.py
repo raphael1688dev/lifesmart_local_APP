@@ -88,7 +88,7 @@ def test_parse_timezone(msg, expected):
     assert parse_timezone({"code": 0, "msg": msg}) == expected
 
 
-def test_daily_refresh_updates_device_and_issue(env):
+def test_daily_refresh_updates_the_device(env):
     setup(env)
     data = runtime(env)
     coordinator = data.hub_coordinator
@@ -101,10 +101,9 @@ def test_daily_refresh_updates_device_and_issue(env):
         HUB_REGISTRY_ID, {"model": "NatureMini Pro", "sw_version": "1.0.6"},
     )
     assert data.hub_info["ver"] == "1.0.6"
-    assert "hub_version_unknown_entry1" in env.issues.deleted
 
 
-def test_failed_refresh_keeps_last_values_and_raises_issue(env):
+def test_failed_refresh_keeps_last_values_and_raises_no_issue(env):
     setup(env)
     coordinator = runtime(env).hub_coordinator
     env.apis[0].version_reply = {"code": 1}
@@ -113,7 +112,7 @@ def test_failed_refresh_keeps_last_values_and_raises_issue(env):
     coordinator.async_set_updated_data(info)
     for listener in coordinator.listeners:
         listener()
-    assert env.issues.created[-1][0] == "hub_version_unknown_entry1"
+    assert env.issues.created == []  # R36: nothing the user could act on
     assert "sw_version" in env.dev_reg.updates[-1][1]  # last known, not wiped
 
 

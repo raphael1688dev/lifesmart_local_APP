@@ -335,7 +335,15 @@ class LifeSmartSignalSensor(LifeSmartBaseSensor):
     lDbm is reported at the device level (not under `data[idx]`), already in dBm,
     available for both battery-powered and mains-powered devices. No state listener
     is registered (idx=None) — polling-only via periodic `ep` GET.
+
+    R36 (quality scale `entity-disabled-by-default`): disabled by default. It
+    changes every 15 minutes on every device and few people look at it; who
+    wants it enables it on the device page. Home Assistant applies this only
+    when the entity is first registered, so sensors that already exist stay
+    enabled.
     """
+
+    _attr_entity_registry_enabled_default = False
 
     _attr_name: str
     _attr_unique_id: str

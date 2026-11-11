@@ -19,7 +19,7 @@ from lifesmart.const import DOMAIN, PLATFORMS
 from lifesmart.entity import LifeSmartEntity
 from lifesmart.models import LifeSmartConfigEntry, LifeSmartData
 
-from .fakes import AGT, HOST, HUB_REGISTRY_ID, make_env, runtime, setup, unload
+from .fakes import AGT, DEVICES, HOST, HUB_REGISTRY_ID, make_env, runtime, setup, unload
 
 PKG = Path(__file__).resolve().parent.parent / "custom_components" / "lifesmart"
 README = (PKG.parent.parent / "README.md").read_text(encoding="utf-8")
@@ -200,3 +200,88 @@ def test_readme_says_when_entities_are_unavailable():
     assert 'Every entity of a hub shows "Unavailable"' in trouble
     limits = README.split("## Known limitations", 1)[1].split("\n## ", 1)[0]
     assert "not verified on hardware" in limits and "`stat`" in limits
+
+
+# --- stale-devices / entity-disabled-by-default / repair-issues (R36 step 7) -------
+
+def _device(*identifiers):
+    return SimpleNamespace(identifiers=set(identifiers))
+
+
+def _may_delete(env, device):
+    import lifesmart
+    return asyncio.run(lifesmart.async_remove_config_entry_device(env.hass, env.entry, device))
+
+
+def test_a_device_the_hub_no_longer_lists_can_be_deleted(env):
+    """stale-devices: the device page gets a working Delete for it."""
+    setup(env)
+    assert _may_delete(env, _device((DOMAIN, "2799"))) is True
+
+
+def test_a_device_still_on_the_hub_cannot_be_deleted(env):
+    setup(env)
+    for device in DEVICES:
+        assert _may_delete(env, _device((DOMAIN, device["me"]))) is False
+
+
+def test_the_hub_device_cannot_be_deleted(env):
+    setup(env)
+    assert _may_delete(env, _device((DOMAIN, f"hub_{AGT}"))) is False
+    assert _may_delete(env, _device((DOMAIN, "hub_192.168.1.50"))) is False
+
+
+def test_deleting_follows_the_latest_device_list(env):
+    """A device removed from the hub since setup: gone from the next `eps`
+    snapshot, so it becomes deletable without a reload. One that was paired
+    since then is protected."""
+    setup(env)
+    coordinator = runtime(env).coordinator
+    assert _may_delete(env, _device((DOMAIN, "2711"))) is False
+    coordinator.async_set_updated_data({"2712": DEVICES[1], "2750": {"me": "2750"}})
+    assert _may_delete(env, _device((DOMAIN, "2711"))) is True
+    assert _may_delete(env, _device((DOMAIN, "2750"))) is False
+
+
+def test_nothing_can_be_deleted_while_the_entry_is_not_loaded(env):
+    """No device list to check against: not sure, so no."""
+    assert _may_delete(env, _device((DOMAIN, "2799"))) is False
+    setup(env)
+    runtime(env).coordinator.data = None
+    assert _may_delete(env, _device((DOMAIN, "2799"))) is False
+
+
+def test_another_integrations_device_is_not_ours_to_delete(env):
+    setup(env)
+    assert _may_delete(env, _device(("mqtt", "2799"))) is False
+    assert _may_delete(env, _device()) is False
+    # A device shared with another integration is judged on our identifier.
+    assert _may_delete(env, _device(("mqtt", "x"), (DOMAIN, "2711"))) is False
+    assert _may_delete(env, _device(("mqtt", "x"), (DOMAIN, "2799"))) is True
+
+
+def test_only_the_signal_sensor_is_disabled_by_default():
+    """entity-disabled-by-default: the rule's own example. Everything else
+    stays enabled, the connectivity sensor included — since R32 it is the
+    one entity that shows a device as disconnected."""
+    disabled = []
+    for platform in PLATFORMS:
+        module = importlib.import_module(f"lifesmart.{platform}")
+        for name, obj in vars(module).items():
+            if (
+                isinstance(obj, type)
+                and obj.__module__ == module.__name__
+                and name.startswith("LifeSmart")
+                and getattr(obj, "_attr_entity_registry_enabled_default", True) is False
+            ):
+                disabled.append(name)
+    assert disabled == ["LifeSmartSignalSensor"]
+
+
+@pytest.mark.parametrize("lang", LANGS)
+def test_every_repair_issue_is_one_the_user_can_act_on(lang):
+    """repair-issues: one issue left, and its text says what to check."""
+    issues = json.loads((PKG / "translations" / lang).read_text(encoding="utf-8"))["issues"]
+    assert set(issues) == {"hub_unreachable"}
+    source = (PKG / "__init__.py").read_text(encoding="utf-8")
+    assert source.count("ir.async_create_issue(") == 1

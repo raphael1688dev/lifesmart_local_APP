@@ -5,7 +5,7 @@ import socket
 import time
 import asyncio
 from datetime import timedelta
-from typing import Any, Callable, Dict, List, Mapping, Optional
+from typing import Any, Callable, Dict, List, Optional
 import voluptuous as vol
 from homeassistant.core import HomeAssistant, ServiceCall, callback
 from homeassistant.exceptions import (
@@ -173,19 +173,17 @@ def _migrate_hub_key(
 
 
 @callback
-def _async_update_version_issue(hass: HomeAssistant, entry: LifeSmartConfigEntry, info: Mapping[str, Any]) -> None:
-    """D17: surface a failed cfg:getver as a repair issue; clear it on success."""
-    issue_id = f"hub_version_unknown_{entry.entry_id}"
-    if info.get("version_ok"):
-        ir.async_delete_issue(hass, DOMAIN, issue_id)
-        return
-    ir.async_create_issue(
-        hass, DOMAIN, issue_id,
-        config_entry_id=entry.entry_id,
-        is_fixable=False,
-        severity=ir.IssueSeverity.WARNING,
-        translation_key="hub_version_unknown",
-    )
+def _async_drop_version_issue(hass: HomeAssistant, entry: LifeSmartConfigEntry) -> None:
+    """Delete the `hub_version_unknown` repair issue older versions raised.
+
+    R36 (quality scale `repair-issues`): a repair issue is for something the
+    user can act on. "cfg:getver did not answer as expected" is not: there is
+    nothing to do but wait for the daily retry. The hub sensors show
+    "unknown" and coordinator.py logs a warning; that is all that is needed.
+    This only removes an issue left by a version before 20261111r7 and can
+    go once those are no longer in use.
+    """
+    ir.async_delete_issue(hass, DOMAIN, f"hub_version_unknown_{entry.entry_id}")
 
 
 async def async_setup(hass: HomeAssistant, config: Dict[str, Any]) -> bool:
@@ -256,7 +254,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: LifeSmartConfigEntry) ->
     hub_coordinator = LifeSmartHubCoordinator(hass, entry, api, entry.data["host"])
     hub_info = await hub_coordinator.async_fetch(include_timezone=False)
     hub_coordinator.async_set_updated_data(hub_info)
-    _async_update_version_issue(hass, entry, hub_info)
+    _async_drop_version_issue(hass, entry)
 
     # D15 (2026-05-24): single coordinator per hub replaces the per-entity
     # `async_track_time_interval` polling pattern (HA 2026.5 規範要求).
@@ -315,10 +313,9 @@ async def async_setup_entry(hass: HomeAssistant, entry: LifeSmartConfigEntry) ->
 
     @callback
     def _on_hub_info() -> None:
-        # D4: daily cfg:getver — keep the device page and the issue current.
+        # D4: daily cfg:getver — keep the device page current.
         info = hub_coordinator.data or {}
         runtime.hub_info = info
-        _async_update_version_issue(hass, entry, info)
         kwargs = hub_device_info_kwargs(hub_key, entry.title, info)
         update: Dict[str, Any] = {"model": kwargs["model"]}
         if "sw_version" in kwargs:
@@ -549,6 +546,42 @@ async def async_unload_entry(hass: HomeAssistant, entry: LifeSmartConfigEntry) -
     for unsub in runtime.unsubs:
         unsub()
     await runtime.api.async_stop()
+
+
+async def async_remove_config_entry_device(
+    hass: HomeAssistant, entry: LifeSmartConfigEntry, device_entry: dr.DeviceEntry,
+) -> bool:
+    """May the user delete this device from the device page? (R36)
+
+    HA quality scale `stale-devices`. When a sub-device is removed from the
+    hub, its device and entity registry entries stay behind in Home
+    Assistant, and without this function the device page offers no way to
+    delete them short of removing the whole hub.
+
+    Yes only for a sub-device the hub no longer lists. Never for the hub
+    device, a device that is still listed, or while the entry is not loaded
+    (then there is no list to check against).
+
+    Stale devices are not removed automatically. The rule asks for that only
+    when the integration is sure, and we are not: how the hub's device list
+    behaves when it misbehaves has not been observed, and a wrong removal
+    would take the user's names and areas with it.
+    """
+    runtime = getattr(entry, "runtime_data", None)
+    if runtime is None:
+        return False
+    # The latest `eps` snapshot (seeded from discovery at setup, refreshed
+    # every 15 minutes and after a reload).
+    listed = runtime.coordinator.data
+    if listed is None:
+        return False
+    for domain, identifier in device_entry.identifiers:
+        if domain != DOMAIN:
+            continue
+        if identifier.startswith("hub_"):
+            return False
+        return identifier not in listed
+    return False
 
 
 # D8 (R25): hub configuration commands (LI §3.3.10) as actions. Each takes

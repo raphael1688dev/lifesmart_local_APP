@@ -57,10 +57,6 @@
         "hub_unreachable": {
             "title": "LifeSmart hub is unreachable",
             "description": "The hub at {host} has not answered for {minutes} minutes. Check that the hub is powered on, the IP is correct, and Home Assistant shares the same LAN segment. This notice clears itself once the hub answers again."
-        },
-        "hub_version_unknown": {
-            "title": "Cannot read hub firmware version",
-            "description": "`cfg:getver` did not return the expected payload. The hub firmware / OS / model sensors will be blank, but other functions still work."
         }
     },
     "services": {

@@ -128,8 +128,8 @@ class LifeSmartHubCoordinator(DataUpdateCoordinator[Dict[str, Any]]):
     """Per-hub cfg:getver + cfg:timezone, refreshed daily.
 
     Data: `ver`, `osver`, `mgatype`, `timezone`, `summer` and `version_ok`
-    (False when the last cfg:getver failed — __init__.py raises the
-    `hub_version_unknown` repair issue from it). A failed read keeps the
+    (False when the last cfg:getver failed; a warning is logged below. R36:
+    no repair issue any more, the user could not act on it). A failed read keeps the
     previous values instead of raising UpdateFailed: the hub sensors would
     rather show the last known firmware than go blank.
     """
