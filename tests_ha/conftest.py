@@ -8,11 +8,9 @@ from unittest.mock import AsyncMock, patch
 
 import pytest
 
-# Imported before the harness mounts its own `custom_components` package:
-# whichever is imported first is the one Home Assistant's loader scans.
-# This import is all it takes; custom_components/ needs no __init__.py
-# (one was added in 00a685e on that assumption and removed again: the suite
-# passes without it).
+# Imported before Home Assistant's loader looks for custom integrations, so
+# `custom_components` resolves to this repository's folder. It needs no
+# __init__.py (R33).
 from custom_components.lifesmart.api import LifeSmartAPI
 
 HOST = "192.168.1.50"
@@ -94,12 +92,6 @@ class ScriptedAPI(LifeSmartAPI):
         return self.hub.answer(self, obj)
 
 
-@pytest.fixture(autouse=True)
-def auto_enable_custom_integrations(enable_custom_integrations):
-    """Let Home Assistant load integrations from custom_components/."""
-    yield
-
-
 @pytest.fixture
 def hub():
     """A hub the config flow talks to instead of opening a socket."""
@@ -113,10 +105,10 @@ def hub():
 def setup_entry():
     """Stop Home Assistant from setting the entry up for real.
 
-    Returns True: Home Assistant 2026.10.4, which the harness runs, expects a
-    bool here. The integration's own function returns None (2026.11+).
+    Returns None, as the integration's own function does (Home Assistant
+    2026.11+). It returned True while the harness ran 2026.10.4 (R33).
     """
     with patch(
-        "custom_components.lifesmart.async_setup_entry", AsyncMock(return_value=True)
+        "custom_components.lifesmart.async_setup_entry", AsyncMock(return_value=None)
     ) as mock:
         yield mock

@@ -1,6 +1,6 @@
 """The messages the forms show, as Home Assistant's own loader serves them.
 
-The harness does not check a custom integration's translations (R33), and
+The test harness does not check a custom integration's translations (R33), and
 tests/test_translations_contract.py only reads the JSON files. This asks
 Home Assistant for the strings the frontend would get.
 """

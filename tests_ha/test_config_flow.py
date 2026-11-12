@@ -4,7 +4,8 @@ HA quality scale `config-flow-test-coverage`: every line of config_flow.py,
 and for every error the proof that the user can correct the input and still
 finish. CI fails if coverage of config_flow.py drops below 100 %.
 
-Runs on the Home Assistant version the harness pins (see tests_ha/__init__.py).
+Runs on the Home Assistant version `pytest-homeassistant` is pinned to (see
+tests_ha/__init__.py).
 """
 import asyncio
 
@@ -12,7 +13,7 @@ import pytest
 import voluptuous as vol
 from homeassistant import config_entries
 from homeassistant.data_entry_flow import FlowResultType
-from pytest_homeassistant_custom_component.common import MockConfigEntry
+from pytest_homeassistant.common import MockConfigEntry
 
 from custom_components.lifesmart.config_flow import (
     FLOW_TIMEOUT,

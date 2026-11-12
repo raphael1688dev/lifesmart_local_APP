@@ -1,15 +1,21 @@
-"""Tests that run inside a real Home Assistant (R33).
+"""Tests that run inside a real Home Assistant (R33, harness replaced in R39).
 
 Separate from `tests/`, whose conftest replaces `homeassistant.*` with
-stubs: the two cannot share one pytest run. Run this suite with
+stubs: the two cannot share one pytest run, and the harness is a pytest
+plugin that loads automatically wherever it is installed. Run this suite with
 
-    pip install pytest-homeassistant-custom-component pytest-cov
-    python -m pytest tests_ha -o asyncio_mode=auto
+    pip install "pytest-homeassistant==2026.11.1" pytest-cov
+    python -m pytest tests_ha -o asyncio_mode=auto -p no:respx \
+        --cov=custom_components/lifesmart --cov-config=tests_ha/coverage.ini
 
-The harness pins the Home Assistant version it was built from. On 2026-11-11
-the newest harness (0.13.375) targets Home Assistant 2026.10.4, one release
-below this integration's minimum (2026.11.0), and it does not import under
-2026.11. So only what works on 2026.10.4 is tested here: the config flow.
-Entry setup uses 2026.11 APIs and stays in `tests/` until the harness
-catches up.
+Give coverage the path, not the module name; tests_ha/coverage.ini says why.
+
+`pytest-homeassistant` is Home Assistant's own test package, published from
+home-assistant/core (`packages/pytest-homeassistant`) with the same version
+number as Home Assistant. Install the release that matches the Home Assistant
+being targeted, and upgrade the two together.
+
+Until 2026-11-12 this used `pytest-homeassistant-custom-component`, whose last
+release (0.13.375) ran Home Assistant 2026.10.4. Its author marked it broken
+on 2026-11-03 and pointed to this package.
 """
