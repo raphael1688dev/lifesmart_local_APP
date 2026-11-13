@@ -43,19 +43,11 @@ async def async_setup_entry(
     # D22: hub device registry ID — sub-devices hang off it via via_device_id.
     hub_device_id = runtime.hub_device_id
     availability = runtime.availability
+    # R41: the device list is the one setup read. Platforms used to read it
+    # again when it was empty (a hub with nothing paired); a failed read then
+    # cost the hub sensors, or failed the whole switch / cover / remote
+    # platform, and a successful one only sent five more requests.
     devices = runtime.devices
-    if not devices:
-        try:
-            devices_data: Dict[str, Any] = await api.discover_devices()
-            if isinstance(devices_data, dict) and isinstance(devices_data.get("msg"), list):
-                devices = devices_data["msg"]
-                runtime.devices = devices
-        except asyncio.TimeoutError:
-            _LOGGER.error("Timeout while discovering devices")
-            return
-        except (OSError, KeyError, ValueError, TypeError) as e:
-            _LOGGER.error("Unexpected error during device discovery: %s", e)
-            return
 
     sensors: List[SensorEntity] = []
     if isinstance(devices, list):
@@ -63,7 +55,7 @@ async def async_setup_entry(
             try:
                 if device.get("devtype") == "SL_NATURE":
                     if "data" in device and "T" in device["data"]:
-                        _LOGGER.debug("Found temperature sensor in %s", device['name'])
+                        _LOGGER.debug("Found temperature sensor in %s", device.get('name'))
                         sensors.append(
                             LifeSmartTemperatureSensor(
                                 api=api,
@@ -75,7 +67,7 @@ async def async_setup_entry(
                             )
                         )
                 elif device.get("devtype") == "SL_P" and "data" in device and "P8" in device["data"]:
-                    _LOGGER.debug("Found battery sensor in %s", device['name'])
+                    _LOGGER.debug("Found battery sensor in %s", device.get('name'))
                     sensors.append(
                         LifeSmartBatterySensor(
                             api=api,
@@ -214,11 +206,14 @@ class LifeSmartTemperatureSensor(LifeSmartBaseSensor):
             self._attr_device_class = SensorDeviceClass.TEMPERATURE
             self._attr_state_class = SensorStateClass.MEASUREMENT
 
+            # R41: a value that is not a number leaves the sensor unknown;
+            # float() used to raise here and the sensor was not created.
             raw_v = device.get("data", {}).get(idx, {}).get("v")
-            if raw_v is not None:
-                self._attr_native_value = float(raw_v) / 10.0
-            else:
-                self._attr_native_value = None
+            self._attr_native_value = (
+                float(raw_v) / 10.0
+                if isinstance(raw_v, (int, float)) and not isinstance(raw_v, bool)
+                else None
+            )
 
             self._attr_native_unit_of_measurement = UnitOfTemperature.CELSIUS
             device_type = device.get('devtype')
@@ -258,7 +253,12 @@ class LifeSmartTemperatureSensor(LifeSmartBaseSensor):
                 self._attr_native_value = float(temp_value) / 10.0
                 self.async_write_ha_state()
         except (asyncio.TimeoutError, OSError, KeyError, ValueError, TypeError) as e:
-            _LOGGER.error("Unexpected error updating temperature sensor: %s", e)
+            # R41: debug, not error. The value from discovery stays and the
+            # 15-minute poll refreshes it; there is nothing for the user to do.
+            _LOGGER.debug(
+                "Could not read %s at start (%s: %s); keeping the value from discovery",
+                self.entity_id, type(e).__name__, e,
+            )
 
 
 class LifeSmartBatterySensor(LifeSmartBaseSensor):
@@ -289,7 +289,12 @@ class LifeSmartBatterySensor(LifeSmartBaseSensor):
             self._attr_device_class = SensorDeviceClass.BATTERY
             self._attr_state_class = SensorStateClass.MEASUREMENT
             self._attr_native_unit_of_measurement = PERCENTAGE
-            self._attr_native_value = device.get("data", {}).get(idx, {}).get("v")
+            # R41: only a number; anything else was stored as the state of a
+            # numeric sensor, which Home Assistant refuses.
+            raw = device.get("data", {}).get(idx, {}).get("v")
+            self._attr_native_value = (
+                int(raw) if isinstance(raw, (int, float)) and not isinstance(raw, bool) else None
+            )
             device_type = device.get('devtype')
             hub_id = device.get('agt', '')
             device_id = device['me']
@@ -319,7 +324,12 @@ class LifeSmartBatterySensor(LifeSmartBaseSensor):
                 self._attr_native_value = int(battery_level)
                 self.async_write_ha_state()
         except (asyncio.TimeoutError, OSError, KeyError, ValueError, TypeError) as e:
-            _LOGGER.error("Unexpected error updating battery sensor: %s", e)
+            # R41: debug, not error. The value from discovery stays and the
+            # 15-minute poll refreshes it; there is nothing for the user to do.
+            _LOGGER.debug(
+                "Could not read %s at start (%s: %s); keeping the value from discovery",
+                self.entity_id, type(e).__name__, e,
+            )
 
     @callback
     def _handle_state_value(self, val: Any) -> None:
@@ -403,7 +413,12 @@ class LifeSmartSignalSensor(LifeSmartBaseSensor):
                     self._attr_native_value = int(raw)
                     self.async_write_ha_state()
         except (asyncio.TimeoutError, OSError, KeyError, ValueError, TypeError) as e:
-            _LOGGER.error("Unexpected error updating signal sensor: %s", e)
+            # R41: debug, not error. The value from discovery stays and the
+            # 15-minute poll refreshes it; there is nothing for the user to do.
+            _LOGGER.debug(
+                "Could not read %s at start (%s: %s); keeping the value from discovery",
+                self.entity_id, type(e).__name__, e,
+            )
 
 
 class LifeSmartHubInfoSensor(LifeSmartHubEntity, SensorEntity):

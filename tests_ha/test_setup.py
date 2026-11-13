@@ -106,6 +106,23 @@ async def test_a_hub_with_nothing_paired_still_loads(hass, sim):
     assert entry.runtime_data.hub_key == sim_hub.HOST
 
 
+async def test_a_hub_with_nothing_paired_reads_the_list_once(hass, sim, caplog):
+    """R41: the platforms used to read the list again when it was empty.
+    When that read failed, the hub sensors were not created and the switch,
+    cover and remote platforms failed to set up (the groupsw switch with
+    them); when it worked it only cost five more requests."""
+    sim.devices = []
+    sim.scenes = [{"id": "AI_GROUP_000002", "name": "All lamps", "cls": "groupsw"}]
+    sim.overrides["eps"] = [{"code": 0, "msg": []}] + [TimeoutError()] * 20
+    entry = make_entry()
+    await _setup(hass, entry)
+    assert len(sim.sent("eps")) == 1
+    assert hass.states.get("sensor.lifesmart_hub_firmware").state == "1.0.94p10"
+    assert hass.states.get("switch.lifesmart_all_lamps_p_000002") is not None
+    assert "Failed to set up" not in caplog.text
+    assert "Timeout while discovering devices" not in caplog.text
+
+
 async def test_hub_id_from_the_reply_when_no_device_has_one(hass, sim):
     for device in sim.devices:
         device.pop("agt")

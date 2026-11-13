@@ -54,12 +54,11 @@ async def async_setup_entry(
     api = runtime.api
     # D22: hub device registry ID — sub-devices hang off it via via_device_id.
     hub_device_id = runtime.hub_device_id
+    # R41: the device list is the one setup read. Platforms used to read it
+    # again when it was empty (a hub with nothing paired); a failed read then
+    # cost the hub sensors, or failed the whole switch / cover / remote
+    # platform, and a successful one only sent five more requests.
     devices = runtime.devices
-    if not devices:
-        devices_data = await api.discover_devices()
-        if isinstance(devices_data, dict) and isinstance(devices_data.get("msg"), list):
-            devices = devices_data["msg"]
-            runtime.devices = devices
     
     switches = []
     if isinstance(devices, list):

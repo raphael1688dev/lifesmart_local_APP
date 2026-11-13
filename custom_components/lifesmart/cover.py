@@ -37,12 +37,11 @@ async def async_setup_entry(
     # D22: hub device registry ID — sub-devices hang off it via via_device_id.
     hub_device_id = runtime.hub_device_id
     coordinator = runtime.coordinator
+    # R41: the device list is the one setup read. Platforms used to read it
+    # again when it was empty (a hub with nothing paired); a failed read then
+    # cost the hub sensors, or failed the whole switch / cover / remote
+    # platform, and a successful one only sent five more requests.
     devices = runtime.devices
-    if not devices:
-        devices_data = await api.discover_devices()
-        if isinstance(devices_data, dict) and isinstance(devices_data.get("msg"), list):
-            devices = devices_data["msg"]
-            runtime.devices = devices
     
     covers = []
     if isinstance(devices, list):
@@ -98,6 +97,12 @@ class LifeSmartCover(LifeSmartDeviceEntity, CoverEntity):
         # 支援開、關、停功能
         self._attr_supported_features = CoverEntityFeature.OPEN | CoverEntityFeature.CLOSE | CoverEntityFeature.STOP
         self._attr_is_closed = None
+        # R41: start from the state in the device list, as the other entities
+        # do. It used to stay unknown until the read below answered, or until
+        # the 15-minute poll when that read failed.
+        channel = device.get("data", {}).get(self._idx)
+        if isinstance(channel, dict):
+            self._set_closed(channel.get("v"))
 
         device_type = device.get("devtype")
         hub_id = device.get("agt", "")
@@ -124,7 +129,8 @@ class LifeSmartCover(LifeSmartDeviceEntity, CoverEntity):
                 if val is not None:
                     self._update_internal_state(val)
         except (asyncio.TimeoutError, OSError, KeyError, ValueError, TypeError) as ex:
-            _LOGGER.error("Error updating cover state: %s", type(ex).__name__)
+            # R41: debug; the state from the device list stays (see __init__).
+            _LOGGER.debug("Could not read %s at start (%s)", self.entity_id, type(ex).__name__)
 
     @callback
     def _handle_state_value(self, val: Any) -> None:

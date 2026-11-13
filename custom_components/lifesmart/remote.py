@@ -31,6 +31,40 @@ def _normalize_devtype(devtype: Any) -> str:
         return ""
     return re.sub(r"\s+", "", devtype).upper()
 
+def _parse_remotes(
+    remote_list: Any, device_id: str,
+) -> "tuple[Dict[str, Dict[str, Any]], Dict[str, str]]":
+    """The remotes of one IR device, and key -> remote id, from what
+    `get_remote_list` returns.
+
+    R41: setup and the re-read use this one parser. Setup used to take every
+    entry as it came, so a key list that was not a dict of keys was kept
+    until the first re-read dropped it.
+    """
+    details: Dict[str, Dict[str, Any]] = {}
+    all_keys: Dict[str, str] = {}
+    if not isinstance(remote_list, list):
+        return details, all_keys
+    for remote_data in remote_list:
+        remote_info = remote_data.get("remote") if isinstance(remote_data, dict) else None
+        keys = remote_data.get("keys") if isinstance(remote_data, dict) else None
+        if not isinstance(remote_info, dict) or not isinstance(keys, dict):
+            continue
+        remote_id = remote_info.get("id")
+        if not isinstance(remote_id, str) or device_id not in remote_id:
+            continue
+        details[remote_id] = {
+            "name": remote_info.get("name", ""),
+            "category": remote_info.get("category", ""),
+            "brand": remote_info.get("brand", ""),
+            "keys": keys,
+        }
+        for key in keys:
+            if isinstance(key, str):
+                all_keys[key] = remote_id
+    return details, all_keys
+
+
 def _slugify(text: Any) -> str:
     base = (text or "").strip().lower()
     base = re.sub(r"[^a-z0-9]+", "_", base)
@@ -48,12 +82,11 @@ async def async_setup_entry(
     api = runtime.api
     # D22: hub device registry ID — sub-devices hang off it via via_device_id.
     hub_device_id = runtime.hub_device_id
+    # R41: the device list is the one setup read. Platforms used to read it
+    # again when it was empty (a hub with nothing paired); a failed read then
+    # cost the hub sensors, or failed the whole switch / cover / remote
+    # platform, and a successful one only sent five more requests.
     devices = runtime.devices
-    if not devices:
-        devices_data = await api.discover_devices()
-        if isinstance(devices_data, dict) and isinstance(devices_data.get("msg"), list):
-            devices = devices_data["msg"]
-            runtime.devices = devices
     
     remotes: List[LifeSmartRemote] = []
     
@@ -165,20 +198,9 @@ class LifeSmartRemote(LifeSmartDeviceEntity, remote.RemoteEntity):
         # R16: slugify the whole object id so a '-' in agt can't leak in.
         self.entity_id = f"remote.{_slugify(f'{base}_{agt}_{device_id}')}"
 
-        self._all_keys = {}
-        self._remote_details = {}
         self._refresh_lock = asyncio.Lock()
         self._last_refresh = 0.0
-
-        for remote_data in remote_data_list:
-            remote_id = remote_data["remote"]["id"]
-            self._remote_details[remote_id] = {
-                "name": remote_data["remote"].get("name", ""),
-                "category": remote_data["remote"].get("category", ""),
-                "brand": remote_data["remote"].get("brand", ""),
-                "keys": remote_data["keys"]
-            }
-            self._all_keys.update({key: remote_id for key in remote_data["keys"]})
+        self._remote_details, self._all_keys = _parse_remotes(remote_data_list, device_id)
         
       
         _LOGGER.debug("Initializing LifeSmart remote: %s", self._device_name)
@@ -192,34 +214,14 @@ class LifeSmartRemote(LifeSmartDeviceEntity, remote.RemoteEntity):
             if not force and self._remote_details and (now - self._last_refresh) < 60:
                 return
             remote_list = await self._api.get_remote_list()
-            if not isinstance(remote_list, list):
-                return
-
-            device_id = self._device["me"]
-            details = {}
-            all_keys = {}
-            for remote_data in remote_list:
-                remote_info = remote_data.get("remote") if isinstance(remote_data, dict) else None
-                keys = remote_data.get("keys") if isinstance(remote_data, dict) else None
-                if not isinstance(remote_info, dict) or not isinstance(keys, dict):
-                    continue
-                remote_id = remote_info.get("id")
-                if not isinstance(remote_id, str) or device_id not in remote_id:
-                    continue
-                details[remote_id] = {
-                    "name": remote_info.get("name", ""),
-                    "category": remote_info.get("category", ""),
-                    "brand": remote_info.get("brand", ""),
-                    "keys": keys,
-                }
-                for k in keys:
-                    if isinstance(k, str):
-                        all_keys[k] = remote_id
-
+            details, all_keys = _parse_remotes(remote_list, self._device["me"])
             if details:
                 self._remote_details = details
                 self._all_keys = all_keys
                 self._last_refresh = time.monotonic()
+                # R41: the attributes show the list; they used to keep the
+                # one read at setup.
+                self._async_write_if_added()
 
     @property
     def supported_features(self) -> int:

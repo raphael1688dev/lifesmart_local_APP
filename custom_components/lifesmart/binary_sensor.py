@@ -4,7 +4,6 @@ Currently exposes one CONNECTIVITY binary_sensor per sub-device, based on the
 device-level `stat` common attribute (Local Interfaces §6.1 — `stat`: 1=online,
 0=offline; §4 — NOTIFY events include `stat` for online/offline changes).
 """
-import asyncio
 import logging
 from typing import Any, Dict, List, Optional
 
@@ -43,19 +42,11 @@ async def async_setup_entry(
     # D22: hub device registry ID — sub-devices hang off it via via_device_id.
     hub_device_id = runtime.hub_device_id
     availability = runtime.availability
+    # R41: the device list is the one setup read. Platforms used to read it
+    # again when it was empty (a hub with nothing paired); a failed read then
+    # cost the hub sensors, or failed the whole switch / cover / remote
+    # platform, and a successful one only sent five more requests.
     devices = runtime.devices
-    if not devices:
-        try:
-            devices_data: Dict[str, Any] = await api.discover_devices()
-            if isinstance(devices_data, dict) and isinstance(devices_data.get("msg"), list):
-                devices = devices_data["msg"]
-                runtime.devices = devices
-        except asyncio.TimeoutError:
-            _LOGGER.error("Timeout while discovering devices")
-            return
-        except (OSError, KeyError, ValueError, TypeError) as e:
-            _LOGGER.error("Unexpected error during device discovery: %s", e)
-            return
 
     binary_sensors: List[BinarySensorEntity] = []
     if isinstance(devices, list):

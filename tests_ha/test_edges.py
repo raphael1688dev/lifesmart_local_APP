@@ -81,20 +81,19 @@ async def test_signal_strength_read_at_start_that_gives_nothing(hass, sim, reply
     {"code": 0, "msg": "x"},              # not a device
     {"code": 0},                          # no msg
 ])
-async def test_reads_at_start_that_fail_keep_the_values_from_discovery(hass, sim, reply):
+async def test_reads_at_start_that_fail_keep_the_values_from_discovery(hass, sim, reply, caplog):
     sim.overrides["ep"] = [reply] * 40
     entry = await _setup(hass)
     assert entry.state is ConfigEntryState.LOADED
     assert _state(hass, NATURE_T) == "24.5"
     assert _state(hass, STAIRS_BATTERY) == "90"
     assert _state(hass, STAIRS_L1) == "on"
-    # The curtain is the exception: it takes its state only from that read,
-    # not from discovery, so it is unknown until the 15-minute poll (D1:
-    # which channel carries the state is not verified anyway).
-    assert _state(hass, CURTAIN) == "unknown"
-    sim.overrides["ep"] = []
-    await _poll(hass)
+    # R41: the curtain too starts from the device list (it used to stay
+    # unknown until the 15-minute poll).
     assert _state(hass, CURTAIN) == "closed"
+    # R41: a failed read at start is not an error for the user to act on.
+    assert not [r for r in caplog.records
+                if r.name.startswith("custom_components.lifesmart") and r.levelname == "ERROR"]
 
 
 async def test_a_device_without_a_temperature_value(hass, sim):
@@ -104,12 +103,14 @@ async def test_a_device_without_a_temperature_value(hass, sim):
     assert _state(hass, NATURE_T) == "unknown"
 
 
-async def test_a_device_without_a_name_gets_no_temperature_sensor(hass, sim):
-    """The temperature sensor's setup reads `name` and skips the device
-    without it (as before R40); its other entities are created."""
+async def test_a_device_without_a_name_still_gets_its_sensors(hass, sim):
+    """R41: setup's log line read `name` and skipped the temperature sensor
+    of a device without one."""
     del sim.device("2713")["name"]
+    del sim.device("2714")["name"]
     await _setup(hass)
-    assert hass.states.get(NATURE_T) is None
+    assert _state(hass, NATURE_T) == "24.5"
+    assert _state(hass, f"sensor.sl_p_{A}_2714_p8") == "80"
     assert hass.states.get(f"switch.sl_nature_{A}_2713_l1") is not None
 
 
@@ -329,11 +330,23 @@ async def test_version_1_entry_with_devices_as_a_dict_and_odd_unique_ids(hass, s
 
 # --- more odd values -----------------------------------------------------------------------
 
-async def test_a_temperature_that_is_not_a_number_at_start(hass, sim):
+async def test_values_that_are_not_numbers_at_start(hass, sim):
+    """R41: the sensor is created and unknown. A temperature used to raise
+    and the sensor was skipped; a battery value was stored as it came."""
     sim.device("2713")["data"]["T"]["v"] = "warm"
+    sim.device("2711")["data"]["V"]["v"] = "full"
+    sim.device("2714")["data"]["P8"]["v"] = True
+    sim.overrides["ep"] = [TimeoutError()] * 40   # the read at start does not help
     await _setup(hass)
-    assert hass.states.get(NATURE_T) is None   # skipped, as before R40
-    assert hass.states.get(f"switch.sl_nature_{A}_2713_l1") is not None
+    assert _state(hass, NATURE_T) == "unknown"
+    assert _state(hass, STAIRS_BATTERY) == "unknown"
+    assert _state(hass, f"sensor.sl_p_{A}_2714_p8") == "unknown"
+    sim.overrides["ep"] = []
+    sim.device("2713")["data"]["T"]["v"] = 250
+    sim.device("2711")["data"]["V"]["v"] = 64
+    await _poll(hass)
+    assert _state(hass, NATURE_T) == "25.0"
+    assert _state(hass, STAIRS_BATTERY) == "64"
 
 
 async def test_odd_values_in_a_poll(hass, sim, loaded):
@@ -381,17 +394,28 @@ async def test_remotes_of_other_devices_and_odd_key_lists(hass, sim):
     sim.remotes.append({"id": "AI_IR_2715_7", "name": "Odd"})
     sim.remote_keys["AI_IR_2715_7"] = ["not", "a", "dict"]
     await _setup(hass)
-    # A key the remote does not have makes it read the list again.
-    await hass.services.async_call(
-        "remote", "send_command", {"entity_id": REMOTE, "command": ["nope"]}, blocking=True,
-    )
-    # Re-reading drops the remote whose key list is not a list of keys
-    # (the list read at setup kept it), so its "keys" are not sent.
+    # R41: setup uses the same parser as the re-read; the odd list is left
+    # out from the start (it used to be kept until the first re-read).
+    assert set(hass.states.get(REMOTE).attributes["remotes"]) == {"AI_IR_2715_1"}
     await hass.services.async_call(
         "remote", "send_command", {"entity_id": REMOTE, "command": ["AI_IR_2715_7::not"]},
         blocking=True,
     )
     assert not sim.sent("spotremote", cmd="sendkey")
+
+
+async def test_the_remote_shows_what_it_read_again(hass, sim, loaded):
+    """R41: a remote learned in the app after setup shows up in the
+    attributes once the remote reads the list again."""
+    sim.remotes.append({"id": "AI_IR_2715_2", "name": "Fan"})
+    sim.remote_keys["AI_IR_2715_2"] = {"speed": "k9"}
+    await hass.services.async_call(
+        "remote", "send_command", {"entity_id": REMOTE, "command": ["speed"]}, blocking=True,
+    )
+    await hass.async_block_till_done()
+    attributes = hass.states.get(REMOTE).attributes
+    assert set(attributes["remotes"]) == {"AI_IR_2715_1", "AI_IR_2715_2"}
+    assert "speed" in attributes["all_commands"]
 
 
 async def test_a_remote_with_nothing_learned_and_a_hub_that_stops_answering(hass, sim):
