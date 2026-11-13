@@ -112,3 +112,50 @@ def setup_entry():
         "custom_components.lifesmart.async_setup_entry", AsyncMock(return_value=None)
     ) as mock:
         yield mock
+
+
+# --- the whole integration, against a hub simulated at the datagram level ---------
+# (R40, quality scale step 9). tests_ha/hub.py says what the hub does.
+
+from pytest_homeassistant.common import MockConfigEntry  # noqa: E402
+
+from custom_components.lifesmart.const import DOMAIN  # noqa: E402
+
+from . import hub as sim_hub  # noqa: E402
+
+
+@pytest.fixture
+def sim():
+    """A simulated hub; every LifeSmartAPI the integration creates talks to it."""
+    the_hub = sim_hub.Hub()
+    with (
+        patch("custom_components.lifesmart.LifeSmartAPI", sim_hub.api_class_for(the_hub)),
+        patch(
+            "custom_components.lifesmart._get_local_ip_for_target",
+            return_value=sim_hub.LOCAL_IP,
+        ),
+        # The simulated hub answers at once; this only shortens the wait for
+        # an answer that never comes (10 s per attempt in the integration).
+        patch("custom_components.lifesmart.API_TIMEOUT", sim_hub.TIMEOUT),
+    ):
+        yield the_hub
+
+
+def make_entry(**data) -> MockConfigEntry:
+    return MockConfigEntry(
+        domain=DOMAIN, title="LifeSmart Hub", version=2, unique_id=sim_hub.HOST,
+        data={
+            "host": sim_hub.HOST, "model": sim_hub.MODEL, "token": sim_hub.TOKEN,
+            "local_port": sim_hub.BOUND_PORT, **data,
+        },
+    )
+
+
+@pytest.fixture
+async def loaded(hass, sim):
+    """The integration set up for real, on the simulated hub."""
+    entry = make_entry()
+    entry.add_to_hass(hass)
+    assert await hass.config_entries.async_setup(entry.entry_id)
+    await hass.async_block_till_done()
+    return entry

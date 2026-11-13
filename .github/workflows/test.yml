@@ -43,7 +43,7 @@ jobs:
         run: pytest tests/ -v -W error
 
   pytest-ha:
-    name: config flow under Home Assistant
+    name: tests inside Home Assistant
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
@@ -62,11 +62,24 @@ jobs:
         # cannot change what this job tests without a commit.
         run: pip install --upgrade pip "pytest-homeassistant==2026.11.1" pytest-cov
 
-      - name: Run the config flow tests, 100 % line coverage required
+      - name: Run the tests inside Home Assistant
+        # R40: the whole integration runs here against a hub simulated at
+        # the datagram level (tests_ha/hub.py), not only the config flow.
         run: >
           python -m pytest tests_ha -v -o asyncio_mode=auto -p no:respx
           --cov=custom_components/lifesmart --cov-config=tests_ha/coverage.ini
-          --cov-report=term-missing --cov-fail-under=100
+          --cov-report=
+
+      - name: Config flow, 100 % line coverage required
+        run: >
+          python -m coverage report --rcfile=tests_ha/coverage.ini
+          --include='custom_components/lifesmart/config_flow.py' --fail-under=100
+
+      - name: Whole integration, more than 95 % line coverage required
+        # Quality scale `test-coverage` asks for "above 95%"; 95.5 keeps it
+        # strictly above once rounded.
+        run: >
+          python -m coverage report --rcfile=tests_ha/coverage.ini --fail-under=95.5
 
   compile:
     name: py_compile (full integration)

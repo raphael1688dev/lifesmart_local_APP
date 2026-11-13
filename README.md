@@ -238,14 +238,18 @@ There are two test suites, run separately. CI runs both on Python 3.14, which is
 python3.14 -m venv .venv && .venv/bin/pip install pytest && .venv/bin/pytest tests/
 ```
 
-`tests_ha/` drives the config flow through a real Home Assistant, using Home Assistant's own test package [pytest-homeassistant](https://github.com/home-assistant/core/tree/dev/packages/pytest-homeassistant), whose version matches the Home Assistant release it runs. CI fails if any line of `config_flow.py` is not covered. Keep it in its own virtual environment: it is a pytest plugin that loads automatically, and `tests/` replaces Home Assistant with stubs.
+`tests_ha/` runs the integration inside a real Home Assistant, using Home Assistant's own test package [pytest-homeassistant](https://github.com/home-assistant/core/tree/dev/packages/pytest-homeassistant), whose version matches the Home Assistant release it runs. The hub is simulated at the datagram level (`tests_ha/hub.py`), so the integration's own code builds, signs, sends and parses every message. CI fails if any line of `config_flow.py` is not covered, or if coverage of the whole integration is not above 95 %. Keep it in its own virtual environment: it is a pytest plugin that loads automatically, and `tests/` replaces Home Assistant with stubs.
 
 ```bash
 python3.14 -m venv .venv-ha && .venv-ha/bin/pip install "pytest-homeassistant==2026.11.1" pytest-cov
 ```
 
 ```bash
-.venv-ha/bin/python -m pytest tests_ha -o asyncio_mode=auto -p no:respx --cov=custom_components/lifesmart --cov-config=tests_ha/coverage.ini --cov-fail-under=100
+.venv-ha/bin/python -m pytest tests_ha -o asyncio_mode=auto -p no:respx --cov=custom_components/lifesmart --cov-config=tests_ha/coverage.ini
+```
+
+```bash
+.venv-ha/bin/python -m coverage report --rcfile=tests_ha/coverage.ini --fail-under=95.5
 ```
 
 ## License

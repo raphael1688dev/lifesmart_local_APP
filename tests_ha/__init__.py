@@ -8,7 +8,14 @@ plugin that loads automatically wherever it is installed. Run this suite with
     python -m pytest tests_ha -o asyncio_mode=auto -p no:respx \
         --cov=custom_components/lifesmart --cov-config=tests_ha/coverage.ini
 
-Give coverage the path, not the module name; tests_ha/coverage.ini says why.
+Give coverage the path, not the module name; tests_ha/coverage.ini says why
+and lists the two coverage gates CI applies.
+
+What runs here (R40): the config flow (test_config_flow.py), and the whole
+integration set up for real against tests_ha/hub.py, a hub simulated at the
+datagram level, so the integration's own API builds, signs, sends and parses
+every packet (test_setup / test_control / test_running / test_actions /
+test_edges). `tests/` keeps its stubbed tests for pure functions.
 
 `pytest-homeassistant` is Home Assistant's own test package, published from
 home-assistant/core (`packages/pytest-homeassistant`) with the same version
