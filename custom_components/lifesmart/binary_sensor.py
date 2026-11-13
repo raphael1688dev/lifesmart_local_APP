@@ -5,7 +5,7 @@ device-level `stat` common attribute (Local Interfaces §6.1 — `stat`: 1=onlin
 0=offline; §4 — NOTIFY events include `stat` for online/offline changes).
 """
 import logging
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, override
 
 from homeassistant.components.binary_sensor import (
     BinarySensorDeviceClass,
@@ -126,6 +126,7 @@ class LifeSmartConnectivitySensor(LifeSmartDeviceEntity, BinarySensorEntity):
             raise
 
     @callback
+    @override
     def _handle_stat_value(self, val: Any) -> None:
         """Pushed `stat` (LI §4 NOTIFY, dispatched as virtual idx "stat")."""
         if not isinstance(val, (int, float)):
@@ -133,6 +134,7 @@ class LifeSmartConnectivitySensor(LifeSmartDeviceEntity, BinarySensorEntity):
         self._attr_is_on = (val == 1)
         self._async_write_if_added()
 
+    @override
     def _update_from_device(self, device: Dict[str, Any]) -> bool:
         """D15: `stat` from the coordinator's `eps` snapshot."""
         stat = device.get("stat")

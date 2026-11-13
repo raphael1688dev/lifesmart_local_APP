@@ -19,7 +19,7 @@ string values are the same in both, so they work on 2026.11 and 2026.12
 without a warning. Import the constants once the minimum HA is 2026.12.
 """
 import logging
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional, Tuple, override
 
 from homeassistant.components.event import EventDeviceClass, EventEntity
 from homeassistant.core import HomeAssistant, callback
@@ -132,6 +132,7 @@ class LifeSmartButtonEvent(LifeSmartDeviceEntity, EventEntity):
         self._attr_event_types = sorted({event for event, _ in value_map.values()})
 
     @callback
+    @override
     def _handle_state_value(self, val: Any) -> None:
         mapped = self._value_map.get(int(val)) if isinstance(val, (int, float)) else None
         if mapped is None:

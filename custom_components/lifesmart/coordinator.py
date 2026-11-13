@@ -18,7 +18,7 @@ from __future__ import annotations
 import asyncio
 import logging
 from datetime import timedelta
-from typing import TYPE_CHECKING, Any, Dict, Optional
+from typing import Any, Dict, Optional, TYPE_CHECKING, override
 
 from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import ConfigEntryAuthFailed
@@ -55,6 +55,7 @@ class LifeSmartCoordinator(DataUpdateCoordinator[Dict[str, Dict[str, Any]]]):
         )
         self._api = api
 
+    @override
     async def _async_update_data(self) -> Dict[str, Dict[str, Any]]:
         """Fetch fresh `eps` snapshot."""
         try:
@@ -183,5 +184,6 @@ class LifeSmartHubCoordinator(DataUpdateCoordinator[Dict[str, Any]]):
         if timezone:
             self.async_set_updated_data({**(self.data or {}), **timezone})
 
+    @override
     async def _async_update_data(self) -> Dict[str, Any]:
         return await self.async_fetch()

@@ -196,6 +196,7 @@ def _install_ha_stubs() -> None:
             super().__init_subclass__(**kwargs)
 
     cfg.ConfigFlow = _ConfigFlow
+    cfg.ConfigFlowResult = dict  # R42: config_flow.py annotates its steps
     cfg.OptionsFlow = _Stub
     sys.modules["homeassistant.config_entries"] = cfg
 
@@ -208,6 +209,8 @@ def _install_ha_stubs() -> None:
             super().__init__(**kw)
 
     ent.DeviceInfo = _DeviceInfo
+    # R42: device_info.py imports it from where HA defines it.
+    sys.modules["homeassistant.helpers.device_registry"].DeviceInfo = _DeviceInfo
 
     # R32: entity.py derives every entity from this. Like HA's: `hass` is
     # None until the entity is added, and the lifecycle methods exist so

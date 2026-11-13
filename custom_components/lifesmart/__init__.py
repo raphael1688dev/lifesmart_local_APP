@@ -85,7 +85,8 @@ def _get_local_ip_for_target(target_ip: str) -> str:
     sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
     try:
         sock.connect((target_ip, 1))
-        return sock.getsockname()[0]
+        address: str = sock.getsockname()[0]
+        return address
     finally:
         sock.close()
 
@@ -345,7 +346,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: LifeSmartConfigEntry) ->
     ir.async_delete_issue(hass, DOMAIN, issue_id_unreachable)
     reachability = _HubReachability()
 
-    async def _refresh_notify(_now) -> None:
+    async def _refresh_notify(_now: Any) -> None:
         # The 90 s re-subscription (LI §4: expires after 300 s) doubles as the
         # hub heartbeat for the `hub_unreachable` repair issue (R19).
         reply: Any = None
@@ -765,7 +766,9 @@ def _async_register_services(hass: HomeAssistant) -> None:
         }),
     )
 
-def generate_entity_id(device_type, hub_id, device_id, idx=None):
+def generate_entity_id(
+    device_type: Any, hub_id: Any, device_id: Any, idx: Optional[str] = None,
+) -> str:
     if idx is not None:
         raw_id = f"{device_type}_{hub_id}_{device_id}_{idx}".lower()
     else:

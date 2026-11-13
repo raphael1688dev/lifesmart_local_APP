@@ -252,6 +252,12 @@ python3.14 -m venv .venv-ha && .venv-ha/bin/pip install "pytest-homeassistant==2
 .venv-ha/bin/python -m coverage report --rcfile=tests_ha/coverage.ini --fail-under=95.5
 ```
 
+The same environment type-checks the integration with Home Assistant's own strict settings (`mypy.ini`):
+
+```bash
+.venv-ha/bin/pip install mypy && .venv-ha/bin/python -m mypy custom_components/lifesmart
+```
+
 ## License
 
 MIT

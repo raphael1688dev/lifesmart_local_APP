@@ -3,7 +3,8 @@ import asyncio
 import logging
 import re
 import time
-from typing import Any, Dict, List, Optional
+from collections.abc import Iterable
+from typing import Any, Dict, List, Optional, override
 
 from homeassistant.components import remote
 from homeassistant.core import HomeAssistant
@@ -94,13 +95,12 @@ async def async_setup_entry(
         # 優化點：先檢查設備清單中，是否真的存在支援的 IR 設備
         has_ir_device = any(_normalize_devtype(d.get("devtype")) in SUPPORTED_REMOTE_TYPES for d in devices)
         
-        remote_list = []
+        remote_list: List[Dict[str, Any]] = []
         if has_ir_device:
-            # 只有真的有 IR 設備，才去呼叫 API
+            # 只有真的有 IR 設備，才去呼叫 API。R42: get_remote_list always
+            # returns a list (empty when the hub refuses), so the check that
+            # followed here could not fail.
             remote_list = await api.get_remote_list()
-            if not isinstance(remote_list, list):
-                _LOGGER.warning("Failed to load remote list from hub")
-                remote_list = []
         # R30: lets lifesmart.send_keys route a remote_id to the hub that has it.
         runtime.remote_ids = {
             item["remote"]["id"]
@@ -108,7 +108,7 @@ async def async_setup_entry(
             if isinstance(item, dict) and isinstance(item.get("remote"), dict) and "id" in item["remote"]
         }
         
-        device_remotes = {}
+        device_remotes: Dict[str, Dict[str, Any]] = {}
         
         for device in devices:
             devtype = _normalize_devtype(device.get("devtype"))
@@ -167,14 +167,14 @@ class LifeSmartRemote(LifeSmartDeviceEntity, remote.RemoteEntity):
 
     def __init__(
         self,
-        api,
+        api: Any,
         device: Dict[str, Any],
         remote_data_list: List[Dict[str, Any]],
         name: str,
         hub_device_id: Optional[str] = None,
         coordinator: Optional[LifeSmartCoordinator] = None,
         availability: Optional[HubAvailability] = None,
-    ):
+    ) -> None:
         """Initialize the remote.
 
         R32: lifecycle and availability are in entity.py. The coordinator is
@@ -224,11 +224,13 @@ class LifeSmartRemote(LifeSmartDeviceEntity, remote.RemoteEntity):
                 self._async_write_if_added()
 
     @property
-    def supported_features(self) -> int:
+    @override
+    def supported_features(self) -> remote.RemoteEntityFeature:
         """Return the list of supported features."""
         return remote.RemoteEntityFeature.ACTIVITY
 
     @property
+    @override
     def extra_state_attributes(self) -> Dict[str, Any]:
         """Return the state attributes."""
         attributes = {
@@ -241,7 +243,8 @@ class LifeSmartRemote(LifeSmartDeviceEntity, remote.RemoteEntity):
 
         return attributes
 
-    async def async_send_command(self, command: List[str], **kwargs: Any) -> None:
+    @override
+    async def async_send_command(self, command: Iterable[str], **kwargs: Any) -> None:
         """Send commands remote_id to a device."""      
         if not self._remote_details:
             try:
@@ -270,11 +273,11 @@ class LifeSmartRemote(LifeSmartDeviceEntity, remote.RemoteEntity):
             else:
                 if cmd not in self._all_keys:
                     await self._async_refresh_data(force=True)
-                remote_id = self._all_keys.get(cmd)
-                if remote_id:
+                owner = self._all_keys.get(cmd)
+                if owner:
                     for _attempt in range(3):
                         try:
-                            await self._api.send_remote_key(remote_id, cmd)
+                            await self._api.send_remote_key(owner, cmd)
                             break
                         except asyncio.TimeoutError:
                             # Tried up to three times. R32: a failed send no longer
@@ -282,5 +285,5 @@ class LifeSmartRemote(LifeSmartDeviceEntity, remote.RemoteEntity):
                             # (availability.py) and the device's `stat`.
                             continue
                         except (OSError, KeyError, ValueError, TypeError) as ex:
-                            _LOGGER.error("Error sending command %s to remote %s: %s", cmd, remote_id, type(ex).__name__)
+                            _LOGGER.error("Error sending command %s to remote %s: %s", cmd, owner, type(ex).__name__)
                             break

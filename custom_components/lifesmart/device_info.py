@@ -30,7 +30,7 @@ key; __init__.py `_resolve_hub_key` / `_migrate_hub_key` decide and move it.
 """
 from typing import Any, Dict, Mapping, Optional
 
-from homeassistant.helpers.entity import DeviceInfo
+from homeassistant.helpers.device_registry import DeviceInfo
 
 from .const import DOMAIN, HUB_MODEL_NAMES, MANUFACTURER
 

@@ -6,7 +6,7 @@ import hashlib
 import struct
 import logging
 from collections.abc import Callable
-from typing import Any, Dict, Optional, Tuple
+from typing import Any, Dict, Optional, Tuple, override
 from .const import API_PORT, REMARK, CMD_GET, CMD_GET_REPLY, CMD_NOTIFY, CMD_SET
 
 _LOGGER = logging.getLogger(__name__)
@@ -249,14 +249,14 @@ class LifeSmartAPI:
         self._pending[msg_id] = fut
         try:
             self._transport.sendto(message, (self.host, API_PORT))
-            response = await asyncio.wait_for(fut, timeout=timeout or self.timeout)
+            response: Dict[str, Any] = await asyncio.wait_for(fut, timeout=timeout or self.timeout)
             return response
         finally:
             self._pending.pop(msg_id, None)
 
-    async def discover_devices(self):
+    async def discover_devices(self) -> Dict[str, Any]:
         # 移除錯誤的 hardcode ID，改為標準空請求
-        args = {}
+        args: Dict[str, Any] = {}
         # args = {"me": "2d02"}
         return await self.send_command("eps", args, 1)
 
@@ -473,5 +473,6 @@ class _LifeSmartDatagramProtocol(asyncio.DatagramProtocol):
     def __init__(self, api: LifeSmartAPI) -> None:
         self._api = api
 
-    def datagram_received(self, data: bytes, addr) -> None:
+    @override
+    def datagram_received(self, data: bytes, addr: Tuple[str | Any, int]) -> None:
         self._api._handle_datagram(data)

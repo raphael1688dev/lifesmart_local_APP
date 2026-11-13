@@ -25,7 +25,7 @@ and `_cleanup` instead.
 """
 from __future__ import annotations
 
-from typing import Any, Callable, Dict, List, Optional
+from typing import Any, Callable, Dict, List, Optional, override
 
 from homeassistant.core import callback
 from homeassistant.helpers.entity import Entity
@@ -49,10 +49,12 @@ class LifeSmartEntity(Entity):
         self._unsubs: List[Callable[[], None]] = []
 
     @property
+    @override
     def available(self) -> bool:
         """False while the hub is not answering."""
         return self._availability is None or self._availability.available
 
+    @override
     async def async_added_to_hass(self) -> None:
         if self._availability is not None:
             self._unsubs.append(
@@ -62,6 +64,7 @@ class LifeSmartEntity(Entity):
         self._subscribe()
         await self._async_initial_refresh()
 
+    @override
     async def async_will_remove_from_hass(self) -> None:
         self._cleanup()
         while self._unsubs:
@@ -69,6 +72,7 @@ class LifeSmartEntity(Entity):
         await super().async_will_remove_from_hass()
 
     @callback
+    @override
     def async_entity_id_changed(self, old_entity_id: str) -> None:
         """Opt in to in-place entity_id renames (HA 2026.11+, R19).
 
@@ -135,11 +139,13 @@ class LifeSmartDeviceEntity(LifeSmartEntity):
         )
 
     @property
+    @override
     def available(self) -> bool:
         if not super().available:
             return False
         return self._device_online or not self._follows_device_stat
 
+    @override
     def _subscribe(self) -> None:
         me = self._device["me"]
         if self._idx is not None:

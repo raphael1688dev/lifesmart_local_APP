@@ -1,7 +1,7 @@
 """Platform for LifeSmart cover integration."""
 import asyncio
 import logging
-from typing import Optional, Any
+from typing import Any, Dict, Optional, override
 from homeassistant.components.cover import CoverEntity, CoverDeviceClass, CoverEntityFeature
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
@@ -78,8 +78,8 @@ class LifeSmartCover(LifeSmartDeviceEntity, CoverEntity):
 
     def __init__(
         self,
-        api,
-        device,
+        api: Any,
+        device: Dict[str, Any],
         idx: Optional[str] = None,
         hub_device_id: Optional[str] = None,
         coordinator: Optional[LifeSmartCoordinator] = None,
@@ -111,11 +111,12 @@ class LifeSmartCover(LifeSmartDeviceEntity, CoverEntity):
 
         _LOGGER.debug("Initializing cover: %s (ID: %s)", device_name, self._attr_unique_id)
 
+    @override
     async def _async_initial_refresh(self) -> None:
         """實體加入 HA 時獲取初始狀態（推播監聽由 entity.py 註冊）"""
         await self._async_update_state()
 
-    async def _async_update_state(self, *_):
+    async def _async_update_state(self, *_: Any) -> None:
         """獲取窗簾初始狀態"""
         try:
             # 官方規範：精簡 GET 參數
@@ -133,10 +134,12 @@ class LifeSmartCover(LifeSmartDeviceEntity, CoverEntity):
             _LOGGER.debug("Could not read %s at start (%s)", self.entity_id, type(ex).__name__)
 
     @callback
+    @override
     def _handle_state_value(self, val: Any) -> None:
         """處理網關主動推播的 UDP 狀態"""
         self._update_internal_state(val)
 
+    @override
     def _update_from_device(self, device: dict) -> bool:
         """D15: same channel as push (PORT_STATE, D1 unverified), from `eps`."""
         channel = device.get("data", {}).get(self._idx)
@@ -155,7 +158,8 @@ class LifeSmartCover(LifeSmartDeviceEntity, CoverEntity):
         if self._set_closed(val):
             self._async_write_if_added()
 
-    async def async_open_cover(self, **kwargs):
+    @override
+    async def async_open_cover(self, **kwargs: Any) -> None:
         """Open the cover."""
         _LOGGER.debug("Opening cover: %s", self.entity_id)
         # 官方規範：加入 tag: "m"
@@ -167,7 +171,8 @@ class LifeSmartCover(LifeSmartDeviceEntity, CoverEntity):
             "val": 1
         }, CMD_SET)
 
-    async def async_close_cover(self, **kwargs):
+    @override
+    async def async_close_cover(self, **kwargs: Any) -> None:
         """Close the cover."""
         _LOGGER.debug("Closing cover: %s", self.entity_id)
         await self._api.send_command("ep", {
@@ -178,7 +183,8 @@ class LifeSmartCover(LifeSmartDeviceEntity, CoverEntity):
             "val": 0 # 若原代碼 val:0 可運作則保留，若無效請改為 1
         }, CMD_SET)
 
-    async def async_stop_cover(self, **kwargs):
+    @override
+    async def async_stop_cover(self, **kwargs: Any) -> None:
         """Stop the cover."""
         _LOGGER.debug("Stopping cover: %s", self.entity_id)
         await self._api.send_command("ep", {

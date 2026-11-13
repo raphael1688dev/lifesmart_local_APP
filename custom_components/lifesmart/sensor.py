@@ -1,6 +1,6 @@
 """Platform for LifeSmart sensor integration."""
 import logging
-from typing import Any, Dict, Optional, List
+from typing import Any, Dict, List, Optional, override
 import asyncio
 from homeassistant.components.sensor import (
     SensorDeviceClass,
@@ -9,8 +9,8 @@ from homeassistant.components.sensor import (
 )
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
-from homeassistant.helpers.entity import EntityCategory
 from homeassistant.const import (
+    EntityCategory,
     PERCENTAGE,
     SIGNAL_STRENGTH_DECIBELS_MILLIWATT,
     UnitOfTemperature,
@@ -163,6 +163,7 @@ class LifeSmartBaseSensor(LifeSmartDeviceEntity, SensorEntity):
             _LOGGER.error("Missing required device info field: %s", e)
             raise
 
+    @override
     async def _async_initial_refresh(self) -> None:
         """One read when added, rather than waiting for the coordinator."""
         await self._async_update()
@@ -172,6 +173,7 @@ class LifeSmartBaseSensor(LifeSmartDeviceEntity, SensorEntity):
         raise NotImplementedError
 
     @callback
+    @override
     def _handle_state_value(self, val: Any) -> None:
         if not isinstance(val, (int, float)):
             return
@@ -226,12 +228,14 @@ class LifeSmartTemperatureSensor(LifeSmartBaseSensor):
             raise
 
     @callback
+    @override
     def _handle_state_value(self, val: Any) -> None:
         if not isinstance(val, (int, float)):
             return
         self._attr_native_value = float(val) / 10.0
         self._async_write_if_added()
 
+    @override
     def _update_from_device(self, device: Dict[str, Any]) -> bool:
         """D15: the value from the coordinator's `eps` snapshot."""
         raw = device.get("data", {}).get(self._idx, {}).get("v")
@@ -240,6 +244,7 @@ class LifeSmartTemperatureSensor(LifeSmartBaseSensor):
         self._attr_native_value = float(raw) / 10.0
         return True
 
+    @override
     async def _async_update(self, *_: Any) -> None:
         """One-shot init fetch. Periodic refresh now handled by coordinator."""
         args: Dict[str, Any] = {
@@ -303,6 +308,7 @@ class LifeSmartBatterySensor(LifeSmartBaseSensor):
             _LOGGER.error("Missing required battery sensor field: %s", e)
             raise
 
+    @override
     def _update_from_device(self, device: Dict[str, Any]) -> bool:
         """D15: the value from the coordinator's `eps` snapshot."""
         raw = device.get("data", {}).get(self._idx, {}).get("v")
@@ -311,6 +317,7 @@ class LifeSmartBatterySensor(LifeSmartBaseSensor):
         self._attr_native_value = int(raw)
         return True
 
+    @override
     async def _async_update(self, *_: Any) -> None:
         """One-shot init fetch. Periodic refresh now handled by coordinator."""
         args: Dict[str, Any] = {
@@ -332,6 +339,7 @@ class LifeSmartBatterySensor(LifeSmartBaseSensor):
             )
 
     @callback
+    @override
     def _handle_state_value(self, val: Any) -> None:
         if not isinstance(val, (int, float)):
             return
@@ -394,6 +402,7 @@ class LifeSmartSignalSensor(LifeSmartBaseSensor):
             _LOGGER.error("Missing required signal sensor field: %s", e)
             raise
 
+    @override
     def _update_from_device(self, device: Dict[str, Any]) -> bool:
         """D15: `lDbm` from the coordinator's `eps` snapshot."""
         raw = device.get("lDbm")
@@ -402,6 +411,7 @@ class LifeSmartSignalSensor(LifeSmartBaseSensor):
         self._attr_native_value = int(raw)
         return True
 
+    @override
     async def _async_update(self, *_: Any) -> None:
         """One-shot init fetch. Periodic refresh now handled by coordinator."""
         args: Dict[str, Any] = {"me": self._device["me"]}
@@ -478,6 +488,7 @@ class LifeSmartHubInfoSensor(LifeSmartHubEntity, SensorEntity):
         else:
             self._attr_native_value = raw
 
+    @override
     def _subscribe(self) -> None:
         if self._hub_coordinator is not None:
             self._unsubs.append(

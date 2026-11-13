@@ -1,7 +1,7 @@
 """Platform for LifeSmart switch integration."""
 import asyncio
 import logging
-from typing import Optional
+from typing import Any, Dict, List, Optional, override
 from homeassistant.components.switch import SwitchDeviceClass, SwitchEntity
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
@@ -60,7 +60,7 @@ async def async_setup_entry(
     # platform, and a successful one only sent five more requests.
     devices = runtime.devices
     
-    switches = []
+    switches: List[SwitchEntity] = []
     if isinstance(devices, list):
         for device in devices:
             if device.get("devtype") in SUPPORTED_SWITCH_TYPES:
@@ -119,14 +119,14 @@ class LifeSmartSwitch(LifeSmartDeviceEntity, SwitchEntity):
 
     def __init__(
         self,
-        api,
-        device,
-        idx,
-        name,
+        api: Any,
+        device: Dict[str, Any],
+        idx: str,
+        name: str,
         hub_device_id: Optional[str] = None,
         coordinator: Optional[LifeSmartCoordinator] = None,
         availability: Optional[HubAvailability] = None,
-    ):
+    ) -> None:
         """Initialize the switch."""
         super().__init__(
             api, device, idx,
@@ -134,8 +134,8 @@ class LifeSmartSwitch(LifeSmartDeviceEntity, SwitchEntity):
             availability=availability, default_name="LifeSmart Switch",
         )
         self._attr_name = name
-        self._expected_state = None
-        self._confirm_event = None
+        self._expected_state: Optional[bool] = None
+        self._confirm_event: Optional[asyncio.Event] = None
         self._send_lock = asyncio.Lock()
         self._send_task: asyncio.Task | None = None
         self._pending_value: int | None = None
@@ -151,15 +151,17 @@ class LifeSmartSwitch(LifeSmartDeviceEntity, SwitchEntity):
         initial_state = device.get("data", {}).get(idx, {}).get("v", 0)
         self._state = bool(initial_state)
 
+    @override
     async def _async_initial_refresh(self) -> None:
         await self._async_update_state()
 
+    @override
     def _cleanup(self) -> None:
         if self._send_task:
             self._send_task.cancel()
             self._send_task = None
 
-    async def _async_update_state(self, *_, retries: Optional[int] = None):
+    async def _async_update_state(self, *_: Any, retries: Optional[int] = None) -> None:
         """Fetch state from device.
 
         `retries` goes to api.send_command (None = its default for a GET).
@@ -189,7 +191,8 @@ class LifeSmartSwitch(LifeSmartDeviceEntity, SwitchEntity):
             _LOGGER.debug("Switch %s state read failed: %s", self.entity_id, type(ex).__name__)
 
     @callback
-    def _handle_state_value(self, val) -> None:
+    @override
+    def _handle_state_value(self, val: Any) -> None:
         if not isinstance(val, (int, float)):
             return
         self._state = bool(int(val))
@@ -198,15 +201,18 @@ class LifeSmartSwitch(LifeSmartDeviceEntity, SwitchEntity):
         self._async_write_if_added()
 
     @property
-    def is_on(self):
+    @override
+    def is_on(self) -> bool:
         """Return true if device is on."""
         return self._state
 
-    async def async_turn_on(self, **kwargs):
+    @override
+    async def async_turn_on(self, **kwargs: Any) -> None:
         """Turn the switch on."""
         await self._enqueue_command(1)
 
-    async def async_turn_off(self, **kwargs):
+    @override
+    async def async_turn_off(self, **kwargs: Any) -> None:
         """Turn the switch off."""
         await self._enqueue_command(0)
 
@@ -243,7 +249,7 @@ class LifeSmartSwitch(LifeSmartDeviceEntity, SwitchEntity):
         }
         try:
             self._expected_state = bool(value)
-            self._confirm_event = asyncio.Event()
+            confirm = self._confirm_event = asyncio.Event()
             try:
                 response = await self._api.send_command("ep", args, CMD_SET, 0.7)
             except asyncio.TimeoutError:
@@ -251,7 +257,7 @@ class LifeSmartSwitch(LifeSmartDeviceEntity, SwitchEntity):
 
             if response.get("code") == 0:
                 try:
-                    await asyncio.wait_for(self._confirm_event.wait(), timeout=1.5)
+                    await asyncio.wait_for(confirm.wait(), timeout=1.5)
                 except asyncio.TimeoutError:
                     await self._async_update_state(retries=0)
             else:

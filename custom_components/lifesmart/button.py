@@ -6,7 +6,7 @@ it groups under the same UI card as the firmware/OS/model sensors.
 """
 import asyncio
 import logging
-from typing import Any, Callable, Dict, List, Optional
+from typing import Any, Callable, Dict, List, Optional, override
 
 from homeassistant.components.button import ButtonDeviceClass, ButtonEntity
 from homeassistant.const import EntityCategory
@@ -88,12 +88,14 @@ class LifeSmartHubRebootButton(LifeSmartHubEntity, ButtonEntity):
         # Hand-written entity_id per CLAUDE.md "Hub-level entity 組織慣例".
         self.entity_id = "button.lifesmart_hub_reboot"
 
+    @override
     def _cleanup(self) -> None:
         # An unload before the timer fires must not reload the entry again.
         if self._cancel_reload is not None:
             self._cancel_reload()
             self._cancel_reload = None
 
+    @override
     async def async_press(self) -> None:
         """Send cfg:reboot. Hub will ack then restart immediately."""
         _LOGGER.info("Sending cfg:reboot to LifeSmart hub")

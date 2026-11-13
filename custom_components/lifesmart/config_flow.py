@@ -3,8 +3,9 @@ import asyncio
 import voluptuous as vol
 import logging
 import ipaddress
-from typing import Any, Dict, Mapping, Optional, Tuple
+from typing import Any, Dict, Mapping, Optional, Tuple, override
 from homeassistant import config_entries
+from homeassistant.config_entries import ConfigFlowResult
 from homeassistant.const import CONF_HOST, CONF_TOKEN
 from .const import DOMAIN, DEFAULT_MODEL
 from .api import LifeSmartAPI, REJECTED_CLOCK, REJECTED_TOKEN, rejection
@@ -27,7 +28,7 @@ ERR_CLOCK_SKEW = "clock_skew"
 ERR_NO_DEVICES = "no_devices"
 ERR_UNEXPECTED_REPLY = "unexpected_reply"
 
-def _has_devices(msg) -> bool:
+def _has_devices(msg: Any) -> bool:
     if isinstance(msg, list):
         return bool(msg)
     if isinstance(msg, dict):
@@ -38,29 +39,29 @@ def validate_host(host: Any) -> str:
     """Return a normalised host (IP literal or hostname) or raise vol.Invalid."""
     if not isinstance(host, str):
         raise vol.Invalid("Invalid host")
-    host = host.strip()
-    if not host:
+    stripped: str = host.strip()
+    if not stripped:
         # R18: `vol.Required(CONF_HOST): str` accepts "", and "" passed the
         # hostname checks below, so an empty host used to reach discovery.
         raise vol.Invalid("Empty host")
     try:
-        ipaddress.ip_address(host)
-        return host
+        ipaddress.ip_address(stripped)
+        return stripped
     except ValueError:
-        if len(host) > 253 or not all(len(part) <= 63 for part in host.split(".")):
+        if len(stripped) > 253 or not all(len(part) <= 63 for part in stripped.split(".")):
             raise vol.Invalid("Invalid hostname")
-        return host
+        return stripped
 
 def validate_token(token: Any) -> str:
     """Return a stripped token or raise vol.Invalid."""
     if not isinstance(token, str):
         raise vol.Invalid("Invalid token")
-    token = token.strip()
-    if not 16 <= len(token) <= 64:
+    stripped: str = token.strip()
+    if not 16 <= len(stripped) <= 64:
         raise vol.Invalid("Invalid token length")
-    if not token.isalnum():
+    if not stripped.isalnum():
         raise vol.Invalid("Invalid token characters")
-    return token
+    return stripped
 
 
 def _validate_input(user_input: Dict[str, Any]) -> Dict[str, str]:
@@ -171,7 +172,10 @@ class LifeSmartConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
     # (add_suggested_values_to_schema). Before, an error cleared the user
     # form, and reset the reconfigure form to the stored values.
 
-    async def async_step_user(self, user_input=None):
+    @override
+    async def async_step_user(
+        self, user_input: Optional[Dict[str, Any]] = None
+    ) -> ConfigFlowResult:
         errors: Dict[str, str] = {}
         if user_input is not None:
             # R18: field validation first; only touch the network when the
@@ -195,9 +199,12 @@ class LifeSmartConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             errors=errors,
         )
 
-    async def async_step_reconfigure(self, user_input=None):
+    async def async_step_reconfigure(
+        self, user_input: Optional[Dict[str, Any]] = None
+    ) -> ConfigFlowResult:
         errors: Dict[str, str] = {}
-        entry = self.hass.config_entries.async_get_entry(self.context["entry_id"])
+        # R42: HA's own accessor; async_get_entry(context["entry_id"]) can be None.
+        entry = self._get_reconfigure_entry()
 
         if user_input is not None:
             errors = _validate_input(user_input)  # R18, same as async_step_user
@@ -221,12 +228,14 @@ class LifeSmartConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             errors=errors,
         )
 
-    async def async_step_reauth(self, entry_data: Mapping[str, Any]):
+    async def async_step_reauth(self, entry_data: Mapping[str, Any]) -> ConfigFlowResult:
         """Home Assistant starts this when setup or a poll raises
         ConfigEntryAuthFailed: the hub rejected the token (R34)."""
         return await self.async_step_reauth_confirm()
 
-    async def async_step_reauth_confirm(self, user_input=None):
+    async def async_step_reauth_confirm(
+        self, user_input: Optional[Dict[str, Any]] = None
+    ) -> ConfigFlowResult:
         """Ask for the token again; host and model stay as they are."""
         errors: Dict[str, str] = {}
         entry = self._get_reauth_entry()

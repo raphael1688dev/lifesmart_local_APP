@@ -14,7 +14,7 @@ platforms.
 import asyncio
 import logging
 import re
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, override
 
 from homeassistant.components.scene import Scene
 from homeassistant.core import HomeAssistant
@@ -91,6 +91,7 @@ class LifeSmartScene(LifeSmartEntity, Scene):
         id_tail = self._scene_id[-8:] if len(self._scene_id) > 8 else self._scene_id
         self.entity_id = f"scene.lifesmart_{_slugify(name)}_{id_tail.lower()}"
 
+    @override
     async def async_activate(self, **kwargs: Any) -> None:
         """Fire the scene via cfg:doscene."""
         _LOGGER.debug("Activating LifeSmart scene %s (%s)", self._scene_id, self._attr_name)
