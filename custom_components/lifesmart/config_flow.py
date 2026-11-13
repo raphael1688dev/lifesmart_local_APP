@@ -27,6 +27,7 @@ ERR_INVALID_AUTH = "invalid_auth"
 ERR_CLOCK_SKEW = "clock_skew"
 ERR_NO_DEVICES = "no_devices"
 ERR_UNEXPECTED_REPLY = "unexpected_reply"
+ERR_WRONG_HUB = "wrong_hub"
 
 def _has_devices(msg: Any) -> bool:
     if isinstance(msg, list):
@@ -89,12 +90,26 @@ def _validate_input(user_input: Dict[str, Any]) -> Dict[str, str]:
         errors[CONF_TOKEN] = ERR_INVALID_TOKEN
     return errors
 
+def _hub_id_from(discovery: Dict[str, Any]) -> Optional[str]:
+    """The hub's id in an `eps` reply: its sub-devices' `agt` (LI §6.1),
+    else the reply's `agtid` (LI §4.1). Same rule as setup's hub key (R25)."""
+    msg = discovery.get("msg")
+    devices = msg if isinstance(msg, list) else list(msg.values()) if isinstance(msg, dict) else []
+    for device in devices:
+        agt = device.get("agt") if isinstance(device, dict) else None
+        if isinstance(agt, str) and agt:
+            return agt
+    agtid = discovery.get("agtid")
+    return agtid if isinstance(agtid, str) and agtid else None
+
+
 async def _async_try_hub(
     host: str, model: str, token: str, *, need_devices: bool
-) -> Tuple[Optional[str], int]:
+) -> Tuple[Optional[str], int, Optional[str]]:
     """Ask the hub for its device list (LI §3.3.2), as setup will.
 
-    Returns (error key, 0), or (None, the local UDP port that was bound).
+    Returns (error key, 0, None), or (None, the local UDP port that was
+    bound, the hub's id if it reported one).
 
     R34: what the reply means. `send_command` has already corrected the
     clock and asked again on code 101, so a 101 that comes back here is not
@@ -120,19 +135,19 @@ async def _async_try_hub(
             await api.async_stop()
     except (asyncio.TimeoutError, OSError, KeyError, ValueError, TypeError) as err:
         _LOGGER.debug("Config flow could not reach the hub: %s", err)
-        return ERR_CANNOT_CONNECT, 0
+        return ERR_CANNOT_CONNECT, 0, None
 
     why = rejection(discovery)
     if why == REJECTED_TOKEN:
-        return ERR_INVALID_AUTH, 0
+        return ERR_INVALID_AUTH, 0, None
     if why == REJECTED_CLOCK:
-        return ERR_CLOCK_SKEW, 0
+        return ERR_CLOCK_SKEW, 0, None
     if isinstance(discovery, dict) and discovery.get("code") == 0:
         if need_devices and not _has_devices(discovery.get("msg")):
-            return ERR_NO_DEVICES, 0
-        return None, api.local_port
+            return ERR_NO_DEVICES, 0, None
+        return None, api.local_port, _hub_id_from(discovery)
     _LOGGER.warning("Unexpected reply from the hub at %s: %s", host, discovery)
-    return ERR_UNEXPECTED_REPLY, 0
+    return ERR_UNEXPECTED_REPLY, 0, None
 
 
 DATA_SCHEMA = vol.Schema(
@@ -146,6 +161,14 @@ DATA_SCHEMA = vol.Schema(
 # R34: the hub does not check the model (api.rejection), so a rejected
 # signature can only be put right with another token.
 REAUTH_SCHEMA = vol.Schema({vol.Required(CONF_TOKEN): str})
+
+# R43: a discovered hub; its address is known.
+DISCOVERY_SCHEMA = vol.Schema(
+    {
+        vol.Required("model", default=DEFAULT_MODEL): str,
+        vol.Required(CONF_TOKEN): str,
+    }
+)
 
 
 def _form_values(source: Mapping[str, Any]) -> Dict[str, Any]:
@@ -172,6 +195,13 @@ class LifeSmartConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
     # (add_suggested_values_to_schema). Before, an error cleared the user
     # form, and reset the reconfigure form to the stored values.
 
+    # R43: an entry's unique id is the hub's own id (`agt` / `LSID`), not the
+    # address. Entries made before R43 still have the address until setup or
+    # discovery replaces it (__init__._async_adopt_hub_id).
+
+    def __init__(self) -> None:
+        self._discovered: Dict[str, str] = {}
+
     @override
     async def async_step_user(
         self, user_input: Optional[Dict[str, Any]] = None
@@ -182,13 +212,19 @@ class LifeSmartConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             # input is well-formed. See _validate_input.
             errors = _validate_input(user_input)
         if user_input is not None and not errors:
-            await self.async_set_unique_id(user_input[CONF_HOST])
-            self._abort_if_unique_id_configured()
-            error, local_port = await _async_try_hub(
+            # The same address: no need to ask the hub.
+            self._async_abort_entries_match({CONF_HOST: user_input[CONF_HOST]})
+            error, local_port, hub_id = await _async_try_hub(
                 user_input[CONF_HOST], user_input["model"], user_input[CONF_TOKEN],
                 need_devices=True,
             )
             if error is None:
+                # R43: the same hub under another address is the same entry;
+                # it takes the new address and reloads.
+                await self.async_set_unique_id(hub_id or user_input[CONF_HOST])
+                self._abort_if_unique_id_configured(
+                    updates={CONF_HOST: user_input[CONF_HOST]}
+                )
                 user_input["local_port"] = local_port
                 return self.async_create_entry(title="LifeSmart Hub", data=user_input)
             errors["base"] = error
@@ -209,14 +245,18 @@ class LifeSmartConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         if user_input is not None:
             errors = _validate_input(user_input)  # R18, same as async_step_user
         if user_input is not None and not errors:
-            error, local_port = await _async_try_hub(
+            error, local_port, hub_id = await _async_try_hub(
                 user_input[CONF_HOST], user_input["model"], user_input[CONF_TOKEN],
                 need_devices=True,
             )
+            if error is None and hub_id is not None and not self._same_hub(entry, hub_id):
+                # R43: the address leads to another hub.
+                error = ERR_WRONG_HUB
             if error is None:
                 user_input["local_port"] = local_port
+                unique_id = hub_id if hub_id is not None else entry.unique_id
                 return self.async_update_reload_and_abort(
-                    entry, data={**entry.data, **user_input}
+                    entry, unique_id=unique_id, data={**entry.data, **user_input}
                 )
             errors["base"] = error
 
@@ -226,6 +266,77 @@ class LifeSmartConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 DATA_SCHEMA, _form_values(user_input if user_input is not None else entry.data)
             ),
             errors=errors,
+        )
+
+    def _same_hub(self, entry: config_entries.ConfigEntry, hub_id: str) -> bool:
+        """May `entry` be pointed at the hub `hub_id`?
+
+        Yes if it is that hub. An entry still identified by its address
+        (from before R43) has no hub id to compare; it may take this one
+        unless another entry already has it.
+        """
+        if entry.unique_id == hub_id:
+            return True
+        if entry.unique_id != entry.data.get(CONF_HOST):
+            return False
+        other = self.hass.config_entries.async_entry_for_domain_unique_id(DOMAIN, hub_id)
+        return other is None
+
+    @override
+    async def async_step_integration_discovery(
+        self, discovery_info: Dict[str, Any]
+    ) -> ConfigFlowResult:
+        """A hub answered the LAN search (discovery.py, R43)."""
+        host = str(discovery_info["host"])
+        hub_id = str(discovery_info["hub_id"])
+        await self.async_set_unique_id(hub_id)
+        # Set up already: follow it to its current address (reloads if it
+        # changed). Quality scale discovery-update-info.
+        self._abort_if_unique_id_configured(updates={CONF_HOST: host})
+        # Set up before R43, still identified by its address: give it the
+        # hub id now, so it is recognised from here on.
+        for entry in self._async_current_entries(include_ignore=False):
+            if entry.data.get(CONF_HOST) == host:
+                if entry.unique_id == host:
+                    self.hass.config_entries.async_update_entry(entry, unique_id=hub_id)
+                return self.async_abort(reason="already_configured")
+        self._discovered = {
+            "host": host,
+            "name": str(discovery_info.get("name") or host),
+            "model": str(discovery_info.get("model") or ""),
+        }
+        self.context["title_placeholders"] = {"name": self._discovered["name"]}
+        return await self.async_step_discovery_confirm()
+
+    async def async_step_discovery_confirm(
+        self, user_input: Optional[Dict[str, Any]] = None
+    ) -> ConfigFlowResult:
+        """Ask for the token of a discovered hub; the address is known."""
+        errors: Dict[str, str] = {}
+        host = self._discovered["host"]
+        if user_input is not None:
+            try:
+                token = validate_token(user_input.get(CONF_TOKEN))
+            except vol.Invalid:
+                errors[CONF_TOKEN] = ERR_INVALID_TOKEN
+            else:
+                model = user_input.get("model") or DEFAULT_MODEL
+                error, local_port, _hub_id = await _async_try_hub(
+                    host, model, token, need_devices=True,
+                )
+                if error is None:
+                    return self.async_create_entry(
+                        title="LifeSmart Hub",
+                        data={CONF_HOST: host, "model": model, CONF_TOKEN: token,
+                              "local_port": local_port},
+                    )
+                errors["base"] = error
+
+        return self.async_show_form(
+            step_id="discovery_confirm",
+            data_schema=self.add_suggested_values_to_schema(DISCOVERY_SCHEMA, user_input),
+            errors=errors,
+            description_placeholders=dict(self._discovered),
         )
 
     async def async_step_reauth(self, entry_data: Mapping[str, Any]) -> ConfigFlowResult:
@@ -248,7 +359,7 @@ class LifeSmartConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             else:
                 # A hub that accepts the token but has no devices paired is
                 # still a working login.
-                error, _port = await _async_try_hub(
+                error, _port, _hub_id = await _async_try_hub(
                     entry.data[CONF_HOST], entry.data.get("model", DEFAULT_MODEL), token,
                     need_devices=False,
                 )

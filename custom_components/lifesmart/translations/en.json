@@ -1,5 +1,6 @@
 {
     "config": {
+        "flow_title": "{name}",
         "step": {
             "user": {
                 "title": "LifeSmart Hub",
@@ -38,6 +39,18 @@
                 "data_description": {
                     "token": "The OpenDev token from the LifeSmart app. 16 to 64 letters and digits."
                 }
+            },
+            "discovery_confirm": {
+                "title": "LifeSmart Hub found on your network",
+                "description": "\"{name}\" ({model}) answered at {host}. Enter its OpenDev token to set it up.",
+                "data": {
+                    "model": "OpenDev Model",
+                    "token": "Token"
+                },
+                "data_description": {
+                    "model": "The OpenDev model string shown with your token in the LifeSmart app, for example OD_XXX_XXX. This is not the model printed on the hub. The hubs tested so far do not check it; only the token has to be right.",
+                    "token": "The OpenDev token from the LifeSmart app. 16 to 64 letters and digits."
+                }
             }
         },
         "error": {
@@ -47,7 +60,8 @@
             "invalid_auth": "The hub rejected this token (code 101, although the time was correct). Check the OpenDev token in the LifeSmart app.",
             "clock_skew": "The hub rejected the request (code 101) and did not report its time, so the clock could not be corrected. Check the token, and sync the Home Assistant host's clock with NTP.",
             "no_devices": "No devices found on the hub",
-            "unexpected_reply": "The hub answered, but not with a device list. The reply is in the Home Assistant log."
+            "unexpected_reply": "The hub answered, but not with a device list. The reply is in the Home Assistant log.",
+            "wrong_hub": "The hub at this address is a different hub from the one this entry was set up for, or it is already set up as another entry. Add it with \"Add hub\" instead."
         },
         "abort": {
             "already_configured": "Device is already configured"
@@ -57,6 +71,10 @@
         "hub_unreachable": {
             "title": "LifeSmart hub is unreachable",
             "description": "The hub at {host} has not answered for {minutes} minutes. Check that the hub is powered on, the IP is correct, and Home Assistant shares the same LAN segment. This notice clears itself once the hub answers again."
+        },
+        "duplicate_hub": {
+            "title": "The same LifeSmart hub is set up twice",
+            "description": "\"{title}\" ({host}) and \"{other_title}\" ({other_host}) are the same hub. Both talk to it and create the same devices. Delete one of them from the integration's page; the one you keep follows the hub if its address changes."
         }
     },
     "services": {

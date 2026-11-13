@@ -197,6 +197,7 @@ def _install_ha_stubs() -> None:
 
     cfg.ConfigFlow = _ConfigFlow
     cfg.ConfigFlowResult = dict  # R42: config_flow.py annotates its steps
+    cfg.SOURCE_INTEGRATION_DISCOVERY = "integration_discovery"  # R43: discovery.py
     cfg.OptionsFlow = _Stub
     sys.modules["homeassistant.config_entries"] = cfg
 
@@ -241,6 +242,21 @@ def _install_ha_stubs() -> None:
     components = types.ModuleType("homeassistant.components")
     components.__path__ = []  # type: ignore[attr-defined]
     sys.modules["homeassistant.components"] = components
+
+    # R43: discovery.py. The search itself is tested in tests_ha/ (real
+    # Home Assistant); here it only has to import.
+    network_mod = types.ModuleType("homeassistant.components.network")
+
+    async def _broadcast_addresses(hass):
+        return set()
+
+    network_mod.async_get_ipv4_broadcast_addresses = _broadcast_addresses
+    sys.modules[network_mod.__name__] = network_mod
+    components.network = network_mod  # type: ignore[attr-defined]
+    discovery_flow_mod = types.ModuleType("homeassistant.helpers.discovery_flow")
+    discovery_flow_mod.async_create_flow = lambda *a, **kw: None
+    sys.modules[discovery_flow_mod.__name__] = discovery_flow_mod
+    helpers.discovery_flow = discovery_flow_mod  # type: ignore[attr-defined]
 
     remote_mod = types.ModuleType("homeassistant.components.remote")
 

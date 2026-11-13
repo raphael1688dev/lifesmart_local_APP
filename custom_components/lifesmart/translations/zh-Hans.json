@@ -1,5 +1,6 @@
 {
     "config": {
+        "flow_title": "{name}",
         "step": {
             "user": {
                 "title": "LifeSmart 中枢",
@@ -38,6 +39,18 @@
                 "data_description": {
                     "token": "LifeSmart app 里的 OpenDev token，16 到 64 个字母或数字。"
                 }
+            },
+            "discovery_confirm": {
+                "title": "在网络上发现 LifeSmart 中枢",
+                "description": "“{name}”（{model}）在 {host} 响应了搜索。输入它的 OpenDev token 即可完成配置。",
+                "data": {
+                    "model": "OpenDev 型号",
+                    "token": "Token"
+                },
+                "data_description": {
+                    "model": "LifeSmart app 里与 token 一起显示的 OpenDev model 字符串，例如 OD_XXX_XXX。这不是印在中枢上的型号。目前测试过的中枢不会检查这个值，只有 token 必须正确。",
+                    "token": "LifeSmart app 里的 OpenDev token，16 到 64 个字母或数字。"
+                }
             }
         },
         "error": {
@@ -47,7 +60,8 @@
             "invalid_auth": "中枢拒绝了这个 token（代码 101，但时间是正确的）。请确认 LifeSmart app 里的 OpenDev token。",
             "clock_skew": "中枢拒绝请求（代码 101），而且没有报告它的时间，无法校正时钟。请确认 token，并通过 NTP 同步 Home Assistant 主机的时间。",
             "no_devices": "中枢上未找到任何设备",
-            "unexpected_reply": "中枢有响应，但返回的不是设备列表。回复内容记录在 Home Assistant 的日志里。"
+            "unexpected_reply": "中枢有响应，但返回的不是设备列表。回复内容记录在 Home Assistant 的日志里。",
+            "wrong_hub": "这个地址上的中枢不是这个条目原本配置的那一台，或它已经是另一个条目。请改用“添加中枢”加入。"
         },
         "abort": {
             "already_configured": "设备已配置"
@@ -57,6 +71,10 @@
         "hub_unreachable": {
             "title": "LifeSmart 中枢无法连接",
             "description": "中枢 {host} 已有 {minutes} 分钟没有回应。请确认中枢已上电、IP 地址正确、且与 HA 在同一网段。中枢恢复回应后此通知会自动消失。"
+        },
+        "duplicate_hub": {
+            "title": "同一台 LifeSmart 中枢被配置了两次",
+            "description": "“{title}”（{host}）与“{other_title}”（{other_host}）是同一台中枢，两个都会连接并创建相同的设备。请在集成页面删除其中一个；保留的那个在中枢地址改变时会自动跟上。"
         }
     },
     "services": {

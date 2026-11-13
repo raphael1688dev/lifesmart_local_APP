@@ -23,7 +23,7 @@ from custom_components.lifesmart.config_flow import (
 )
 from custom_components.lifesmart.const import DEFAULT_MODEL, DOMAIN
 
-from .conftest import BOUND_PORT, DEVICES, HOST, MODEL, TOKEN
+from .conftest import BOUND_PORT, DEVICES, HOST, HUB_ID, MODEL, TOKEN
 
 GOOD = {"host": HOST, "model": MODEL, "token": TOKEN}
 ENTRY_DATA = {**GOOD, "local_port": BOUND_PORT}
@@ -58,7 +58,8 @@ def _assert_created(result):
     assert result["type"] is FlowResultType.CREATE_ENTRY
     assert result["title"] == "LifeSmart Hub"
     assert result["data"] == ENTRY_DATA
-    assert result["result"].unique_id == HOST
+    # R43: the hub's own id, not the address.
+    assert result["result"].unique_id == HUB_ID
     assert result["result"].version == 2
 
 
@@ -99,7 +100,8 @@ async def test_host_and_token_are_stored_without_surrounding_spaces(hass, hub, s
 async def test_a_hostname_is_accepted(hass, hub, setup_entry):
     result = await _submit(hass, await _start(hass), host="lifesmart-hub.lan")
     assert result["type"] is FlowResultType.CREATE_ENTRY
-    assert result["result"].unique_id == "lifesmart-hub.lan"
+    assert result["result"].unique_id == HUB_ID
+    assert result["result"].data["host"] == "lifesmart-hub.lan"
 
 
 async def test_devices_as_a_dict_are_accepted(hass, hub, setup_entry):
@@ -283,7 +285,9 @@ async def test_reconfigure_updates_the_entry_and_reloads(hass, hub, setup_entry)
     assert result["type"] is FlowResultType.ABORT
     assert result["reason"] == "reconfigure_successful"
     assert entry.data == {**ENTRY_DATA, "token": NEW_TOKEN, "extra": "kept"}
-    assert entry.unique_id == HOST
+    # R43: an entry from before R43 (identified by its address) takes the
+    # hub's id when it is reconfigured.
+    assert entry.unique_id == HUB_ID
     assert hub.apis[0].stopped
     await hass.async_block_till_done()
     setup_entry.assert_awaited_once()  # the reload set it up with the new data

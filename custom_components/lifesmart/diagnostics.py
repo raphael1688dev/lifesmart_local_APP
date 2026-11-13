@@ -57,6 +57,9 @@ async def async_get_config_entry_diagnostics(
         "entry": {
             "title": entry.title,
             "version": entry.version,
+            # R43: the hub id once adopted; the address for older entries
+            # until setup or discovery replaces it.
+            "unique_id": entry.unique_id,
             "data": async_redact_data(dict(entry.data), TO_REDACT),
             "options": dict(entry.options),
         },

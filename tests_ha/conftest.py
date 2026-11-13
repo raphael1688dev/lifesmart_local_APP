@@ -14,6 +14,7 @@ import pytest
 from custom_components.lifesmart.api import LifeSmartAPI
 
 HOST = "192.168.1.50"
+HUB_ID = "A3EAAABtAEwQRzM0NzA2NQ"  # the `agt` of DEVICES: the hub's id (R43)
 MODEL = "OD_TEST_MODEL"
 TOKEN = "0123456789abcdefABCD"
 BOUND_PORT = 50001
@@ -92,6 +93,18 @@ class ScriptedAPI(LifeSmartAPI):
         return self.hub.answer(self, obj)
 
 
+@pytest.fixture(autouse=True)
+def lan_search():
+    """The LAN search (discovery.py, R43) finds nothing unless a test says
+    otherwise: tests may not open sockets. Yields the mock; set its
+    `return_value` to a list of DiscoveredHub."""
+    with patch(
+        "custom_components.lifesmart.discovery.async_discover_hubs",
+        AsyncMock(return_value=[]),
+    ) as mock:
+        yield mock
+
+
 @pytest.fixture
 def hub():
     """A hub the config flow talks to instead of opening a socket."""
@@ -108,9 +121,17 @@ def setup_entry():
     Returns None, as the integration's own function does (Home Assistant
     2026.11+). It returned True while the harness ran 2026.10.4 (R33).
     """
-    with patch(
-        "custom_components.lifesmart.async_setup_entry", AsyncMock(return_value=None)
-    ) as mock:
+    # The real unload needs the runtime data the real setup would have
+    # created; with setup replaced, unload is replaced too (R43: flows that
+    # update an entry now reload it).
+    with (
+        patch(
+            "custom_components.lifesmart.async_setup_entry", AsyncMock(return_value=None)
+        ) as mock,
+        patch(
+            "custom_components.lifesmart.async_unload_entry", AsyncMock(return_value=None)
+        ),
+    ):
         yield mock
 
 

@@ -1,5 +1,6 @@
 {
     "config": {
+        "flow_title": "{name}",
         "step": {
             "user": {
                 "title": "LifeSmart 中樞",
@@ -38,6 +39,18 @@
                 "data_description": {
                     "token": "LifeSmart app 裡的 OpenDev token，16 到 64 個英數字。"
                 }
+            },
+            "discovery_confirm": {
+                "title": "在網路上發現 LifeSmart 中樞",
+                "description": "「{name}」（{model}）在 {host} 回應了搜尋。輸入它的 OpenDev token 即可完成設定。",
+                "data": {
+                    "model": "OpenDev 型號",
+                    "token": "Token"
+                },
+                "data_description": {
+                    "model": "LifeSmart app 裡與 token 一起顯示的 OpenDev model 字串，例如 OD_XXX_XXX。這不是印在中樞上的型號。目前測過的中樞不會檢查這個值，只有 token 必須正確。",
+                    "token": "LifeSmart app 裡的 OpenDev token，16 到 64 個英數字。"
+                }
             }
         },
         "error": {
@@ -47,7 +60,8 @@
             "invalid_auth": "中樞拒絕了這個 token（代碼 101，但時間是正確的）。請確認 LifeSmart app 裡的 OpenDev token。",
             "clock_skew": "中樞拒絕請求（代碼 101），而且沒有回報它的時間，無法校正時鐘。請確認 token，並以 NTP 同步 Home Assistant 主機的時間。",
             "no_devices": "中樞上找不到任何裝置",
-            "unexpected_reply": "中樞有回應，但回的不是裝置清單。回覆內容記在 Home Assistant 的日誌裡。"
+            "unexpected_reply": "中樞有回應，但回的不是裝置清單。回覆內容記在 Home Assistant 的日誌裡。",
+            "wrong_hub": "這個位址上的中樞不是這個項目原本設定的那一台，或它已經是另一個項目。請改用「新增中樞」加入。"
         },
         "abort": {
             "already_configured": "裝置已設定過"
@@ -57,6 +71,10 @@
         "hub_unreachable": {
             "title": "LifeSmart 中樞無法連線",
             "description": "中樞 {host} 已有 {minutes} 分鐘沒有回應。請確認中樞已上線、IP 位址正確、且與 HA 在同一網段。中樞恢復回應後此通知會自動消失。"
+        },
+        "duplicate_hub": {
+            "title": "同一台 LifeSmart 中樞被設定了兩次",
+            "description": "「{title}」（{host}）與「{other_title}」（{other_host}）是同一台中樞，兩個都會連線並建立相同的裝置。請在整合頁面刪除其中一個；留下的那個在中樞位址改變時會自動跟上。"
         }
     },
     "services": {

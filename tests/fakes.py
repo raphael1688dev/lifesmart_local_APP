@@ -223,6 +223,21 @@ class FakeConfigEntries:
     def async_get_entry(self, entry_id: str):
         return self.entries.get(entry_id)
 
+    def async_entry_for_domain_unique_id(self, domain: str, unique_id: str):
+        for entry in self.entries.values():
+            if entry.domain == domain and getattr(entry, "unique_id", None) == unique_id:
+                return entry
+        return None
+
+    def async_update_entry(self, entry, **changes) -> bool:
+        """R43: setup changes the entry's unique id to the hub id."""
+        changed = False
+        for key, value in changes.items():
+            if getattr(entry, key, None) != value:
+                setattr(entry, key, value)
+                changed = True
+        return changed
+
     def async_loaded_entries(self, domain: str) -> list:
         """As HA: the domain's entries whose state is LOADED."""
         return [
@@ -317,6 +332,8 @@ def make_env(monkeypatch) -> SimpleNamespace:
         return unsub
 
     monkeypatch.setattr(lifesmart, "LifeSmartAPI", make_api)
+    # R43: async_setup starts the LAN search; tested in tests_ha/.
+    monkeypatch.setattr(lifesmart, "async_start_discovery", lambda hass: None)
     monkeypatch.setattr(lifesmart, "_get_local_ip_for_target", lambda ip: "192.168.1.10")
     monkeypatch.setattr(lifesmart, "async_track_time_interval", track)
     monkeypatch.setattr(lifesmart, "async_call_later", timers.call_later)
@@ -335,7 +352,7 @@ def make_env(monkeypatch) -> SimpleNamespace:
     entry = FakeEntry(
         entry_id="entry1", title="Living room hub", version=2, domain=DOMAIN,
         data={"host": HOST, "token": "0123456789abcdef", "model": "OD_ALI_TECH"},
-        background=[], state=NOT_LOADED, options={},
+        background=[], state=NOT_LOADED, options={}, unique_id=HOST,
     )
     hass.config_entries.entries[entry.entry_id] = entry
     return SimpleNamespace(hass=hass, entry=entry, log=log, issues=issues, apis=apis,

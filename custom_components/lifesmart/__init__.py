@@ -30,6 +30,7 @@ from .api import (
 )
 from .availability import HubAvailability
 from .coordinator import LifeSmartCoordinator, LifeSmartHubCoordinator
+from .discovery import async_start_discovery
 from .device_info import hub_device_info_kwargs, hub_key_slug
 from .models import LifeSmartConfigEntry, LifeSmartData
 
@@ -116,6 +117,55 @@ def _resolve_hub_key(
     return host
 
 
+def _duplicate_hub_issue_id(entry_id: str) -> str:
+    return f"duplicate_hub_{entry_id}"
+
+
+@callback
+def _async_adopt_hub_id(hass: HomeAssistant, entry: LifeSmartConfigEntry, hub_key: str) -> None:
+    """Make the hub's own id the entry's unique id (R43).
+
+    Entries used to be identified by the address the user typed (R35 kept
+    that; R43 reverses it): the same hub could then be added twice under two
+    addresses, and a hub that moved to another address was not recognised.
+    The hub id is `agt` / `LSID` (LI §6.1 / §2), the same id the hub device
+    has been keyed on since R25, so nothing else changes: entity ids and
+    unique ids are built from the devices, not from the entry's unique id.
+
+    Only an id the hub reported is taken. When `hub_key` fell back to the
+    address (a hub with nothing paired), the entry keeps its unique id until
+    the hub reports one, or discovery finds it at that address.
+
+    Home Assistant does not refuse a unique id another entry already has (it
+    logs and accepts it), so that is checked here. If the same hub is set up
+    twice, this entry keeps its old unique id and a repair issue asks the
+    user to delete one of the two.
+    """
+    issue_id = _duplicate_hub_issue_id(entry.entry_id)
+    if hub_key != entry.data["host"] and entry.unique_id != hub_key:
+        other = hass.config_entries.async_entry_for_domain_unique_id(DOMAIN, hub_key)
+        if other is not None and other.entry_id != entry.entry_id:
+            _LOGGER.warning(
+                "%s and %s are the same LifeSmart hub (%s); delete one of them",
+                entry.title, other.title, hub_key,
+            )
+            ir.async_create_issue(
+                hass, DOMAIN, issue_id,
+                config_entry_id=entry.entry_id,
+                is_fixable=False,
+                severity=ir.IssueSeverity.WARNING,
+                translation_key="duplicate_hub",
+                translation_placeholders={
+                    "title": entry.title, "host": entry.data["host"],
+                    "other_title": other.title, "other_host": other.data.get("host", ""),
+                },
+            )
+            return
+        _LOGGER.info("%s is now identified by its hub id instead of its address", entry.title)
+        hass.config_entries.async_update_entry(entry, unique_id=hub_key)
+    ir.async_delete_issue(hass, DOMAIN, issue_id)
+
+
 def _existing_hub_key(dev_reg: Any, entry: LifeSmartConfigEntry) -> Optional[str]:
     """The key of this entry's hub device, if one is registered."""
     for device in dr.async_entries_for_config_entry(dev_reg, entry.entry_id):
@@ -193,8 +243,12 @@ async def async_setup(hass: HomeAssistant, config: Dict[str, Any]) -> bool:
     HA's `action-setup` rule: actions belong in async_setup, not in
     async_setup_entry, so they exist even while a hub's entry is not loaded
     and can then say so, instead of being an unknown action.
+
+    R43: also starts the search for hubs on the LAN (discovery.py), which
+    offers new hubs and follows configured ones to a new address.
     """
     _async_register_services(hass)
+    async_start_discovery(hass)
     return True
 
 
@@ -287,6 +341,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: LifeSmartConfigEntry) ->
     existing_key = _existing_hub_key(dev_reg, entry)
     hub_key = _resolve_hub_key(discovery, devices, existing_key, entry.data["host"])
     _migrate_hub_key(hass, entry, dev_reg, existing_key, hub_key)
+    _async_adopt_hub_id(hass, entry, hub_key)
     hub_device = dev_reg.async_get_or_create(
         config_entry_id=entry.entry_id,
         **hub_device_info_kwargs(hub_key, entry.title, hub_info),

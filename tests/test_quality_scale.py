@@ -280,8 +280,10 @@ def test_only_the_signal_sensor_is_disabled_by_default():
 
 @pytest.mark.parametrize("lang", LANGS)
 def test_every_repair_issue_is_one_the_user_can_act_on(lang):
-    """repair-issues: one issue left, and its text says what to check."""
+    """repair-issues: each issue says what the user can do.
+    hub_unreachable: check power and network. duplicate_hub (R43): delete
+    one of the two entries."""
     issues = json.loads((PKG / "translations" / lang).read_text(encoding="utf-8"))["issues"]
-    assert set(issues) == {"hub_unreachable"}
+    assert set(issues) == {"hub_unreachable", "duplicate_hub"}
     source = (PKG / "__init__.py").read_text(encoding="utf-8")
-    assert source.count("ir.async_create_issue(") == 1
+    assert source.count("ir.async_create_issue(") == 2

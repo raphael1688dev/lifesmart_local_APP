@@ -1,15 +1,24 @@
 {
     "domain": "lifesmart",
     "name": "Local LifeSmart",
-    "categories": ["hubs_protocols.smart_home_hubs"],
-    "codeowners": ["@raphael1688dev"],
+    "categories": [
+        "hubs_protocols.smart_home_hubs"
+    ],
+    "codeowners": [
+        "@raphael1688dev"
+    ],
     "config_flow": true,
-    "connectivity": ["infrared", "network"],
-    "dependencies": [],
+    "connectivity": [
+        "infrared",
+        "network"
+    ],
+    "dependencies": [
+        "network"
+    ],
     "documentation": "https://github.com/raphael1688dev/lifesmart_local_APP",
     "integration_type": "hub",
     "iot_class": "local_push",
     "issue_tracker": "https://github.com/raphael1688dev/lifesmart_local_APP/issues",
     "requirements": [],
-    "version": "20261113r1"
+    "version": "20261113r2"
 }

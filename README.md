@@ -5,6 +5,7 @@ Control [LifeSmart](https://ilifesmart.com) devices through your LifeSmart hub o
 ## Features
 
 - Local control and real-time state push from the hub (NOTIFY events), with a slow fallback poll.
+- Hubs on your network are found automatically, and a hub that gets a new IP address is followed to it.
 - Switches, curtain motors, IR remotes, temperature, battery, signal-strength and connectivity sensors.
 - Button events from multi-control accessories and CUBE clickers.
 - Hub-level firmware/OS/model/time-zone sensors, a reboot button, the hub's scenes, and its group scenes as switches and lights.
@@ -39,7 +40,9 @@ Control [LifeSmart](https://ilifesmart.com) devices through your LifeSmart hub o
 
 ## Configuration
 
-The setup form asks for three values.
+**Found automatically:** Home Assistant searches the local network for LifeSmart hubs when it starts and every 15 minutes (the hub's own search protocol, Local Interfaces spec §2). A hub that is not set up yet appears under **Settings → Devices & services → Discovered**; open it and enter the token. The address is filled in.
+
+To add a hub by hand, choose **Add integration → Local LifeSmart**. The setup form asks for three values.
 
 | Field | What to enter |
 |---|---|
@@ -50,6 +53,8 @@ The setup form asks for three values.
 The spec describes the model and token as a pair issued by LifeSmart (Local Interfaces spec §3.2). In practice the two hubs this was tested on — a Smart Station and a DEFED hub, firmware 1.0.94p10 — accept any model and check only the token. Enter the model you were given anyway; other firmware may differ. Before the hub answers, the same pair has to be entered in the LifeSmart app: **Smart → + → Smart Template Management → Add Template → Common Templates → OpenDev**, then fill in name, model, token and encrypt key (spec §1.1).
 
 **Changing settings later:** open the integration's menu and choose **Reconfigure** to change the IP, model or token. Home Assistant reloads the integration afterwards.
+
+**If the hub's address changes:** each hub is recognised by its own id, not by its address. When the search finds a set-up hub at a new address, the integration takes the new address and reloads, within 15 minutes. Adding the same hub again under another address does the same instead of creating a second copy, and **Reconfigure** refuses an address that belongs to a different hub.
 
 **If the token changes:** when the hub starts rejecting the stored token, Home Assistant shows "Reauthentication required" on the integration and asks for the new token. The address and model stay as they are.
 
@@ -187,6 +192,8 @@ Nothing is changed on the hub. It stops sending events to Home Assistant within 
 - **Integration shows "Retrying setup".** The hub did not answer at startup, or answered the device list request with an error; the message next to it says which. Home Assistant retries on its own. If the hub is not answering, check power and network.
 - **Every entity of a hub shows "Unavailable".** The hub stopped answering. Check power and network; the entities return by themselves within 90 seconds of the hub answering. The log has one line for when it stopped and one for when it came back.
 - **One device's entities show "Unavailable".** The hub reports that device as offline (its Connectivity sensor shows *Disconnected*). Check the device's power or battery and its distance from the hub. If the device works in the LifeSmart app while Home Assistant shows it unavailable, please open an issue with the diagnostics file.
+- **Repairs: "The same LifeSmart hub is set up twice".** Two entries talk to the same hub (for example added once by IP and once by hostname, before hubs were recognised by their id). Delete one of them from the integration's page.
+- **A hub I do not want keeps showing as discovered.** Choose **Ignore** on it.
 - **Repairs: "LifeSmart hub is unreachable".** The hub has not answered for 5 minutes or more while Home Assistant was running. Check power and network. The notice disappears by itself once the hub answers again.
 - **The hub's Firmware version, OS version or Model sensor shows "Unknown".** The hub did not answer the version request. Everything else keeps working, a warning is written to the log, and the integration asks again once a day. (Versions before `20261111r7` also raised a repair notice for this; it told you nothing you could act on and is gone.)
 - **A device you removed from the hub is still listed.** Open the device's page, choose **⋮ → Delete**. This is offered for devices the hub no longer lists; a device that is still on the hub cannot be deleted this way.

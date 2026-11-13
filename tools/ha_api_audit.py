@@ -50,9 +50,15 @@ USED: dict[str, list[str]] = {
         "async_create_background_task", "async_start_reauth", "_get_reauth_entry",
         "async_set_unique_id", "_abort_if_unique_id_configured", "async_update_reload_and_abort",
         "async_create_entry", "async_show_form",
+        # R42 (missed then) and R43
+        "_get_reconfigure_entry", "async_entry_for_domain_unique_id",
+        "_async_abort_entries_match", "_async_current_entries",
     ],
+    # R43: discovery.py
+    "helpers/discovery_flow.py": ["async_create_flow"],
+    "components/network/__init__.py": ["async_get_ipv4_broadcast_addresses"],
     "data_entry_flow.py": ["async_show_form", "async_create_entry", "add_suggested_values_to_schema"],
-    "core.py": ["async_add_executor_job", "async_register"],
+    "core.py": ["async_add_executor_job", "async_register", "async_create_background_task"],
 }
 
 # Names in USED that the integration reaches only through Home Assistant

@@ -149,8 +149,19 @@ def test_config_flow_errors_match_the_translations(lang):
     assert used == {
         "invalid_host", "invalid_token", "cannot_connect",
         "invalid_auth", "clock_skew", "no_devices", "unexpected_reply",  # R34
+        "wrong_hub",  # R43: reconfigure pointed at another hub
     }
     assert set(_load(lang)["config"]["error"]) == used
+
+
+@pytest.mark.parametrize("lang", LANGS)
+def test_discovery_form_is_translated(lang):
+    """R43: the card shows the hub's name; the form asks model and token."""
+    config = _load(lang)["config"]
+    assert config["flow_title"] == "{name}"
+    step = config["step"]["discovery_confirm"]
+    assert set(step["data"]) == {"model", "token"} == set(step["data_description"])
+    assert all(p in step["description"] for p in ("{name}", "{model}", "{host}"))
 
 
 @pytest.mark.parametrize("lang", LANGS)
