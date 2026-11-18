@@ -2,13 +2,11 @@
 
 HA 2026.11 turns `DeviceInfo` from a TypedDict into a dataclass
 (contributors.home-assistant.io blog 2026-10-13 "DeviceInfo is now a
-dataclass"). Item assignment (`info["sw_version"] = ...`) keeps working
-through a compatibility layer that HA says it will deprecate and remove;
-attribute assignment (`info.sw_version = ...`) is the replacement. When this
-was written the integration still supported HA <= 2026.10, whose dict-based
-DeviceInfo has no attributes, so every platform builds its kwargs here and
-never mutates the result. The minimum is 2026.11 since R23; building once
-and not mutating is kept because it is also the simplest thing to test.
+dataclass"). Its dict-style access (`info["x"]`, `.get()`, `in`, `**`
+unpacking) is deprecated in HA 2026.12 and stops working in 2027.12
+(core #192323). Every platform builds its kwargs here as a plain dict and
+passes them to the constructor once, never touching the result as a dict;
+that also makes the field logic the simplest thing to test.
 
 Two device shapes exist in this integration:
 

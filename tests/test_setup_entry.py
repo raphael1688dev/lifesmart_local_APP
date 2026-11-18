@@ -15,6 +15,7 @@ import asyncio
 import importlib
 
 import pytest
+from homeassistant.helpers.typing import UNDEFINED
 
 import lifesmart
 from lifesmart.const import DOMAIN, PLATFORMS
@@ -75,10 +76,10 @@ def test_sub_devices_hang_off_the_hub(env, platform, monkeypatch):
     sub_devices = 0
     for entity in added:
         info = _device_info(entity)
-        if info["identifiers"] == {HUB_IDENTIFIER}:
-            assert "via_device_id" not in info  # hub-level sensors
+        if info.identifiers == {HUB_IDENTIFIER}:
+            assert info.via_device_id is UNDEFINED  # hub-level sensors
         else:
-            assert info["via_device_id"] == HUB_REGISTRY_ID
+            assert info.via_device_id == HUB_REGISTRY_ID
             sub_devices += 1
     assert sub_devices
 

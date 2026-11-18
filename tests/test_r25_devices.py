@@ -131,7 +131,7 @@ def test_button_events_are_created_per_reported_channel(env):
         ("2720", "B1"), ("2720", "B2"), ("2721", "B"), ("2722", "BN"),
     ]
     for e in events:
-        assert device_info(e)["via_device_id"] == HUB_REGISTRY_ID
+        assert device_info(e).via_device_id == HUB_REGISTRY_ID
         assert e._attr_unique_id == f"event_{AGT}_{e._device['me']}_{e._idx}"
 
 
@@ -180,7 +180,7 @@ def test_group_scenes_land_on_switch_and_light(env):
     assert sorted(e._scene_id for e in lights) == ["AI0000000003", "AI0000000004"]
     for e in group_switches + lights:
         assert e._attr_assumed_state is True
-        assert device_info(e)["identifiers"] == {(DOMAIN, f"hub_{AGT}")}
+        assert device_info(e).identifiers == {(DOMAIN, f"hub_{AGT}")}
     assert group_switches[0].entity_id == "switch.lifesmart_all_lights_00000002"
 
 

@@ -205,9 +205,45 @@ def _install_ha_stubs() -> None:
     # tested. helpers.entity / entity_platform / components.remote.
     ent = types.ModuleType("homeassistant.helpers.entity")
 
-    class _DeviceInfo(dict):
+    # Like HA's (2026.11.2): a dataclass whose fields default to UNDEFINED.
+    # HA deprecates its dict-style access in 2026.12 (gone in 2027.12), so
+    # this stub has none: no `[]`, `.get()`, `in` or `**` unpacking. Tests
+    # read attributes, and a test that would warn on HA fails here.
+    typing_mod = types.ModuleType("homeassistant.helpers.typing")
+
+    class _UndefinedType:
+        def __repr__(self) -> str:
+            return "UNDEFINED"
+
+    typing_mod.UNDEFINED = _UndefinedType()
+    typing_mod.UndefinedType = _UndefinedType
+    sys.modules["homeassistant.helpers.typing"] = typing_mod
+
+    _DEVICE_INFO_FIELDS = (
+        "configuration_url", "connections", "entry_type", "identifiers",
+        "manufacturer", "model", "model_id", "name", "serial_number",
+        "suggested_area", "sw_version", "hw_version", "translation_key",
+        "translation_placeholders", "via_device_id", "created_at",
+        "default_manufacturer", "default_model", "default_name", "modified_at",
+        "via_device",
+    )
+
+    class _DeviceInfo:
+        __slots__ = _DEVICE_INFO_FIELDS
+
         def __init__(self, **kw) -> None:
-            super().__init__(**kw)
+            unknown = set(kw) - set(_DEVICE_INFO_FIELDS)
+            if unknown:
+                raise TypeError(f"DeviceInfo got unexpected fields {sorted(unknown)}")
+            for field in _DEVICE_INFO_FIELDS:
+                setattr(self, field, kw.get(field, typing_mod.UNDEFINED))
+
+        def __eq__(self, other: object) -> bool:
+            if not isinstance(other, _DeviceInfo):
+                return NotImplemented
+            return all(getattr(self, f) == getattr(other, f) for f in _DEVICE_INFO_FIELDS)
+
+        __hash__ = None
 
     ent.DeviceInfo = _DeviceInfo
     # R42: device_info.py imports it from where HA defines it.

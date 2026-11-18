@@ -60,11 +60,12 @@ jobs:
         # pytest-homeassistant-custom-component (last release ran 2026.10.4,
         # marked broken by its author). Pinned, so a new Home Assistant
         # cannot change what this job tests without a commit.
-        run: pip install --upgrade pip "pytest-homeassistant==2026.11.1" pytest-cov mypy
+        run: pip install --upgrade pip "pytest-homeassistant==2026.11.2" pytest-cov mypy
 
       - name: Type check with Home Assistant's strict settings
         # R42, quality scale `strict-typing`: mypy.ini holds Home Assistant
-        # 2026.11.1's settings for integrations in its `.strict-typing` list.
+        # 2026.11.1's settings (unchanged in 2026.11.2) for integrations in
+        # its `.strict-typing` list.
         # It needs Home Assistant installed, which is why it runs here.
         run: python -m mypy custom_components/lifesmart
 

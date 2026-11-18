@@ -1,11 +1,11 @@
 """Tests for lifesmart.device_info (R19, 2026-10-24).
 
-Background: HA 2026.11 turns DeviceInfo into a dataclass. Item assignment
-(`info["x"] = ...`) survives through a compatibility layer that HA has said
-it will deprecate and remove; attribute assignment is not available on the
-dict-based DeviceInfo of HA <= 2026.10. The helpers therefore build every
-field as a constructor kwarg and never mutate the result — which also makes
-the field logic a pure function we can test here without HA.
+Background: DeviceInfo is a dataclass (HA 2026.11). Its dict-style access
+(`info["x"]`, `.get()`, `in`, `**` unpacking) is deprecated in HA 2026.12 and
+stops working in 2027.12. The helpers build every field as a constructor kwarg
+and never mutate the result, which also makes the field logic a pure function
+we can test here without HA. The DeviceInfo stub in conftest.py has no dict
+interface, so any dict-style use fails these tests.
 """
 import pytest
 
@@ -129,24 +129,12 @@ def test_hub_kwargs_carry_no_registry_only_keys():
     assert "config_entry_id" not in hub_device_info_kwargs("h", "t", HUB_INFO)
 
 
-# --- the R19 contract: constructor kwargs only, never item assignment -------------
+# --- the R19 contract: constructor kwargs only, never item access ----------------
 
-class _StrictDeviceInfo:
-    """What DeviceInfo looks like once HA removes the dict compatibility layer:
-    keyword-only construction, attribute reads, no `[]`."""
-
-    def __init__(self, **fields):
-        self.__dict__.update(fields)
-
-    def __setitem__(self, key, value):  # pragma: no cover - must never run
-        raise TypeError("DeviceInfo does not support item assignment")
-
-    def __getitem__(self, key):  # pragma: no cover - must never run
-        raise TypeError("DeviceInfo does not support item access")
-
-
-def test_builders_never_mutate_device_info(monkeypatch):
-    monkeypatch.setattr(di, "DeviceInfo", _StrictDeviceInfo)
+def test_builders_never_mutate_device_info():
+    """The conftest stub has no `[]`; reading attributes is the only way."""
+    with pytest.raises(TypeError):
+        di.DeviceInfo(name="x")["name"]  # the stub really is strict
 
     info = sub_device_info(DEVICE, "hub-registry-id")
     assert info.identifiers == {(DOMAIN, "2711")}
