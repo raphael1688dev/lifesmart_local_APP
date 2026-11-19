@@ -8,7 +8,9 @@ __pycache__/
 
 # Test runner cache and coverage data
 .pytest_cache/
-.coverage
+# `*` also covers copies a folder sync makes (".coverage 2") and coverage's
+# parallel-mode files (".coverage.<host>.<pid>").
+.coverage*
 htmlcov/
 
 # Virtual environments / local Python installs
