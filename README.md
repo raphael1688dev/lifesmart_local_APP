@@ -248,7 +248,7 @@ python3.14 -m venv .venv && .venv/bin/pip install pytest && .venv/bin/pytest tes
 `tests_ha/` runs the integration inside a real Home Assistant, using Home Assistant's own test package [pytest-homeassistant](https://github.com/home-assistant/core/tree/dev/packages/pytest-homeassistant), whose version matches the Home Assistant release it runs. The hub is simulated at the datagram level (`tests_ha/hub.py`), so the integration's own code builds, signs, sends and parses every message. CI fails if any line of `config_flow.py` is not covered, or if coverage of the whole integration is not above 95 %. Keep it in its own virtual environment: it is a pytest plugin that loads automatically, and `tests/` replaces Home Assistant with stubs.
 
 ```bash
-python3.14 -m venv .venv-ha && .venv-ha/bin/pip install "pytest-homeassistant==2026.11.2" pytest-cov
+python3.14 -m venv .venv-ha && .venv-ha/bin/pip install "pytest-homeassistant==2026.11.3" pytest-cov
 ```
 
 ```bash
