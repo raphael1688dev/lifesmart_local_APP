@@ -52,18 +52,22 @@ def sub_device_info_kwargs(
 
     * `name`: explicit override (cover / remote compute their own), else the
       firmware name, else `default_name`.
-    * `model`: `devtype`, else `default_model`.
+    * `model`: `devtype` when it is a non-empty string, else `default_model`.
+      From HA 2026.12 the device registry raises TypeError on a non-str model
+      (core #190077) instead of converting it, which would stop the device
+      from being set up. The spec and the user's hubs only ever send strings.
     * `sw_version`: `str(epver)` when present. Omitted — not None, not
       "Unknown" — when missing, for the same reasons as the hub (R17 / R18):
       None would wipe a version stored on a previous boot, and HA rejects
       non-str values from 2026.12.0.
     * `via_device_id`: only when `hub_device_id` is truthy.
     """
+    devtype = device.get("devtype")
     kwargs: Dict[str, Any] = {
         "identifiers": {(DOMAIN, device["me"])},
         "name": name if name is not None else (device.get("name") or default_name),
         "manufacturer": MANUFACTURER,
-        "model": device.get("devtype") or default_model,
+        "model": devtype if isinstance(devtype, str) and devtype else default_model,
     }
     epver = device.get("epver")
     if epver is not None:

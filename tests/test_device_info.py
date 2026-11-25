@@ -77,6 +77,15 @@ def test_sub_device_defaults_when_firmware_fields_missing():
     assert sub_device_info_kwargs(bare)["model"] == "Unknown"
 
 
+@pytest.mark.parametrize("devtype", [123, 1.5, True, None, "", ["SL_P"], {"t": 1}])
+def test_sub_device_model_is_always_a_string(devtype):
+    """HA 2026.12 raises TypeError on a non-str model (core #190077), so a
+    non-string or empty devtype falls back to the default model."""
+    model = sub_device_info_kwargs({**DEVICE, "devtype": devtype})["model"]
+    assert model == "Unknown"
+    assert sub_device_info_kwargs({**DEVICE, "devtype": "SL_SW_IF3"})["model"] == "SL_SW_IF3"
+
+
 def test_sub_device_empty_name_falls_back():
     assert sub_device_info_kwargs({**DEVICE, "name": ""})["name"] == "LifeSmart Device"
 

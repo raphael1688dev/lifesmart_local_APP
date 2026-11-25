@@ -132,6 +132,19 @@ async def test_hub_id_from_the_reply_when_no_device_has_one(hass, sim):
     assert entry.runtime_data.hub_key == "AGTID_FROM_REPLY"
 
 
+async def test_a_non_string_devtype_still_sets_up_the_device(hass, sim, caplog):
+    """HA 2026.11 warns about a non-str device model and 2026.12 raises
+    (core #190077); the integration falls back to its default model."""
+    sim.device("2711")["devtype"] = 12345
+    entry = make_entry()
+    await _setup(hass, entry)
+    assert entry.state is ConfigEntryState.LOADED
+    stairs = dr.async_get(hass).async_get_device_by_identifier((DOMAIN, "2711"), entry.entry_id)
+    assert stairs is not None
+    assert isinstance(stairs.model, str) and stairs.model != "12345"
+    assert "non-string value" not in caplog.text
+
+
 async def test_an_unreadable_version_leaves_the_hub_sensors_unknown(hass, sim):
     sim.overrides["config:getver"] = [{"code": 1}, {"code": 1}]
     entry = make_entry()
