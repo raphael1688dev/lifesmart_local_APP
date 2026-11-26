@@ -11,17 +11,20 @@ Buttons the hub reports as read-only channels:
 Values map to HA's standard button event types. Events come only from
 push (NOTIFY): a button state read from `eps` is not a press.
 
-R27 (2026-11-10): the event types are plain strings, not ButtonEventType
-members. HA 2026.12 deprecates `MULTI_PRESS_END` and `ATTR_MULTI_PRESS_COUNT`
-(removed in 2027.5.0; warning on access) in favour of `SINGLE_PRESS`,
-`MULTI_PRESS` and `ATTR_PRESS_COUNT`, which 2026.11 does not have yet. The
-string values are the same in both, so they work on 2026.11 and 2026.12
-without a warning. Import the constants once the minimum HA is 2026.12.
+The types are HA's `ButtonEventType` members and `ATTR_PRESS_COUNT`, both
+from HA 2026.12. `MULTI_PRESS_ONGOING`, `MULTI_PRESS_END` and
+`ATTR_MULTI_PRESS_COUNT` are deprecated there (removed in 2027.5.0) and are
+not used.
 """
 import logging
 from typing import Any, Dict, List, Optional, Tuple, override
 
-from homeassistant.components.event import EventDeviceClass, EventEntity
+from homeassistant.components.event import (
+    ATTR_PRESS_COUNT,
+    ButtonEventType,
+    EventDeviceClass,
+    EventEntity,
+)
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
@@ -37,24 +40,16 @@ _LOGGER = logging.getLogger(__name__)
 # (HA quality scale `parallel-updates`).
 PARALLEL_UPDATES = 0
 
-# ButtonEventType values (HA 2026.12 names in comments).
-PRESS_START = "press_start"            # PRESS_START: button went down
-PRESS_END = "press_end"                # PRESS_END: released, not a long press
-SINGLE_PRESS = "single_press"          # SINGLE_PRESS: device counted one press
-MULTI_PRESS = "multi_press"            # MULTI_PRESS: device counted 2 or more
-LONG_PRESS_START = "long_press_start"  # LONG_PRESS_START
-ATTR_PRESS_COUNT = "press_count"       # ATTR_PRESS_COUNT
-
 # v -> (event type, extra attributes)
 _PRESS_RELEASE: Dict[int, Tuple[str, Optional[Dict[str, Any]]]] = {
-    1: (PRESS_START, None),
-    0: (PRESS_END, None),
+    1: (ButtonEventType.PRESS_START, None),   # button went down
+    0: (ButtonEventType.PRESS_END, None),     # released, not a long press
 }
 # The new Clicker reports gestures it has already counted (LI §6.3.7).
 _CLICKER_V2: Dict[int, Tuple[str, Optional[Dict[str, Any]]]] = {
-    1: (SINGLE_PRESS, None),
-    2: (MULTI_PRESS, {ATTR_PRESS_COUNT: 2}),
-    255: (LONG_PRESS_START, None),
+    1: (ButtonEventType.SINGLE_PRESS, None),
+    2: (ButtonEventType.MULTI_PRESS, {ATTR_PRESS_COUNT: 2}),
+    255: (ButtonEventType.LONG_PRESS_START, None),
 }
 
 # devtype -> (button channels, value map)

@@ -1,6 +1,7 @@
 """While the integration runs: the 90 s heartbeat, the 15 min poll, devices
 going offline, being paired or removed, the token being changed (R40)."""
 from datetime import timedelta
+import logging
 
 from homeassistant.config_entries import SOURCE_REAUTH, ConfigEntryState
 from homeassistant.helpers import device_registry as dr, entity_registry as er, issue_registry as ir
@@ -174,6 +175,18 @@ async def test_a_failed_poll_keeps_the_values(hass, sim, loaded):
     await hass.async_block_till_done(wait_background_tasks=True)
     sim.silent = False
     assert _state(hass, NATURE_T) == "24.5"
+
+
+async def test_a_silent_hub_is_logged_as_unavailable_not_as_an_error(hass, sim, loaded, caplog):
+    """HA 2026.12 (core #188683): UpdateFailedUnreachable is logged at info."""
+    caplog.set_level(logging.INFO)
+    sim.silent = True
+    async_fire_time_changed(hass, dt_util.utcnow() + timedelta(minutes=16))
+    await hass.async_block_till_done(wait_background_tasks=True)
+    sim.silent = False
+    poll = [r for r in caplog.records if r.name == "custom_components.lifesmart.coordinator"]
+    assert any(r.levelno == logging.INFO and "is unavailable" in r.getMessage() for r in poll)
+    assert not [r for r in poll if r.levelno >= logging.ERROR]
 
 
 async def test_the_daily_hub_read_updates_the_hub_device(hass, sim, loaded):

@@ -17,7 +17,7 @@ Control [LifeSmart](https://ilifesmart.com) devices through your LifeSmart hub o
 
 ## Requirements
 
-- Home Assistant **2026.11.0** or newer.
+- Home Assistant **2026.12** or newer (2026.12.0b0, the first beta, is the oldest it installs on).
 - A LifeSmart hub (Smart Station, NatureMini family, or DEFED) on the same LAN as Home Assistant.
 - The hub's **local interface (OpenDev) enabled**, with the **model** and **token** LifeSmart assigned to you. See [Configuration](#configuration).
 - UDP traffic allowed between Home Assistant and the hub. The hub listens on port 12348.

@@ -311,13 +311,15 @@ def test_each_attempt_uses_a_new_message_id():
 # --- R27: HA 2026.12 button event types ---------------------------------------
 
 def test_event_types_avoid_deprecated_members():
-    """2026.12 deprecates multi_press_end / multi_press_count (gone in
-    2027.5.0) and the event module must not touch them, not even at import."""
+    """2026.12 deprecates MULTI_PRESS_END / MULTI_PRESS_ONGOING /
+    ATTR_MULTI_PRESS_COUNT (gone in 2027.5.0); the event module uses the
+    current ButtonEventType members and must not touch those, not even at
+    import."""
     import ast
     import inspect
     import lifesmart.event as ev
     tree = ast.parse(inspect.getsource(ev))
-    deprecated = {"MULTI_PRESS_END", "MULTI_PRESS_ONGOING", "ATTR_MULTI_PRESS_COUNT", "ButtonEventType"}
+    deprecated = {"MULTI_PRESS_END", "MULTI_PRESS_ONGOING", "ATTR_MULTI_PRESS_COUNT"}
     used = {a.name for n in ast.walk(tree) if isinstance(n, ast.ImportFrom) for a in n.names}
     used |= {n.attr for n in ast.walk(tree) if isinstance(n, ast.Attribute)}
     used |= {n.id for n in ast.walk(tree) if isinstance(n, ast.Name)}

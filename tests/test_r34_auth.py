@@ -187,15 +187,31 @@ def test_the_poll_raises_auth_failed_for_a_rejected_token():
 
 
 def test_the_poll_reports_other_errors_as_a_failed_update():
-    from lifesmart.coordinator import UpdateFailed
+    from lifesmart.coordinator import UpdateFailed, UpdateFailedUnreachable
     api = FakeAPI()
     coordinator = LifeSmartCoordinator(None, None, api, "h")
     for reply in ({"code": 101}, {"code": 10004}):
         async def discover(reply=reply):
             return reply
         api.discover_devices = discover
-        with pytest.raises(UpdateFailed):
+        with pytest.raises(UpdateFailed) as caught:
             asyncio.run(coordinator._async_update_data())
+        # The hub answered: not "unreachable".
+        assert not isinstance(caught.value, UpdateFailedUnreachable)
+
+
+@pytest.mark.parametrize("error", [asyncio.TimeoutError(), OSError("no route")])
+def test_a_silent_hub_is_reported_as_unreachable(error):
+    """HA 2026.12 logs UpdateFailedUnreachable at info level, not error."""
+    from lifesmart.coordinator import UpdateFailedUnreachable
+    api = FakeAPI()
+    coordinator = LifeSmartCoordinator(None, None, api, "h")
+
+    async def discover():
+        raise error
+    api.discover_devices = discover
+    with pytest.raises(UpdateFailedUnreachable):
+        asyncio.run(coordinator._async_update_data())
 
 
 def test_the_heartbeat_notices_a_rejected_token(env):

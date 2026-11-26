@@ -7,6 +7,7 @@ need HA installed — that lets contributors run tests quickly with just
 """
 from __future__ import annotations
 
+import enum
 import sys
 import types
 from pathlib import Path
@@ -175,6 +176,9 @@ def _install_ha_stubs() -> None:
     class _UpdateFailed(Exception):
         pass
 
+    class _UpdateFailedUnreachable(_UpdateFailed):  # HA 2026.12
+        pass
+
     # DataUpdateCoordinator[T] (generic subscripting); accept any subscript.
     def _generic_class_getitem(cls, _item):
         return cls
@@ -182,6 +186,7 @@ def _install_ha_stubs() -> None:
     _DataUpdateCoordinator.__class_getitem__ = classmethod(_generic_class_getitem)  # type: ignore[attr-defined]
     upd.DataUpdateCoordinator = _DataUpdateCoordinator
     upd.UpdateFailed = _UpdateFailed
+    upd.UpdateFailedUnreachable = _UpdateFailedUnreachable
     sys.modules["homeassistant.helpers.update_coordinator"] = upd
 
     # homeassistant.config_entries
@@ -356,18 +361,21 @@ def _install_ha_stubs() -> None:
                 raise ValueError(f"Invalid event type {event_type}")
             self.last_event = (event_type, event_attributes)
 
-    class _ButtonEventType:
+    # HA 2026.12's members, without the deprecated MULTI_PRESS_ONGOING /
+    # MULTI_PRESS_END and ATTR_MULTI_PRESS_COUNT (R28: fakes carry only the
+    # current interface, so a test fails where HA would warn).
+    class _ButtonEventType(enum.StrEnum):
         PRESS_START = "press_start"
         PRESS_END = "press_end"
         LONG_PRESS_START = "long_press_start"
         LONG_PRESS_END = "long_press_end"
-        MULTI_PRESS_ONGOING = "multi_press_ongoing"
-        MULTI_PRESS_END = "multi_press_end"
+        SINGLE_PRESS = "single_press"
+        MULTI_PRESS = "multi_press"
 
     event_mod.EventEntity = _EventEntity
     event_mod.ButtonEventType = _ButtonEventType
     event_mod.EventDeviceClass = _AnyEnum
-    event_mod.ATTR_MULTI_PRESS_COUNT = "multi_press_count"
+    event_mod.ATTR_PRESS_COUNT = "press_count"
     sys.modules[event_mod.__name__] = event_mod
     components.event = event_mod  # type: ignore[attr-defined]
 

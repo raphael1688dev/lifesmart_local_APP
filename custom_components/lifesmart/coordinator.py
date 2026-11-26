@@ -22,7 +22,11 @@ from typing import Any, Dict, Optional, TYPE_CHECKING, override
 
 from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import ConfigEntryAuthFailed
-from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
+from homeassistant.helpers.update_coordinator import (
+    DataUpdateCoordinator,
+    UpdateFailed,
+    UpdateFailedUnreachable,
+)
 
 from .api import REJECTED_TOKEN, LifeSmartAPI, rejection
 
@@ -61,7 +65,9 @@ class LifeSmartCoordinator(DataUpdateCoordinator[Dict[str, Dict[str, Any]]]):
         try:
             response = await self._api.discover_devices()
         except (asyncio.TimeoutError, OSError) as err:
-            raise UpdateFailed(f"Hub unreachable: {err}") from err
+            # HA 2026.12 (core #188683): an unreachable hub is expected
+            # unavailability, logged at info level instead of error.
+            raise UpdateFailedUnreachable(f"Hub unreachable: {err}") from err
 
         if not isinstance(response, dict):
             raise UpdateFailed(f"Unexpected discovery response shape: {type(response).__name__}")
