@@ -23,6 +23,7 @@ Control [LifeSmart](https://ilifesmart.com) devices through your LifeSmart hub o
 - UDP traffic allowed between Home Assistant and the hub. The hub listens on port 12348.
 - Home Assistant's clock synced with NTP. Every request is signed with a timestamp.
 
+<!-- ha-marketplace:exclude-start -->
 ## Installation
 
 ### HACS (recommended)
@@ -38,6 +39,7 @@ Control [LifeSmart](https://ilifesmart.com) devices through your LifeSmart hub o
 2. Restart Home Assistant.
 3. Add the integration as in step 4 above.
 
+<!-- ha-marketplace:exclude-end -->
 ## Configuration
 
 **Found automatically:** Home Assistant searches the local network for LifeSmart hubs when it starts and every 15 minutes (the hub's own search protocol, Local Interfaces spec §2). A hub that is not set up yet appears under **Settings → Devices & services → Discovered**; open it and enter the token. The address is filled in.
@@ -248,7 +250,7 @@ python3.14 -m venv .venv && .venv/bin/pip install pytest && .venv/bin/pytest tes
 `tests_ha/` runs the integration inside a real Home Assistant, using Home Assistant's own test package [pytest-homeassistant](https://github.com/home-assistant/core/tree/dev/packages/pytest-homeassistant), whose version matches the Home Assistant release it runs. The hub is simulated at the datagram level (`tests_ha/hub.py`), so the integration's own code builds, signs, sends and parses every message. CI fails if any line of `config_flow.py` is not covered, or if coverage of the whole integration is not above 95 %. Keep it in its own virtual environment: it is a pytest plugin that loads automatically, and `tests/` replaces Home Assistant with stubs.
 
 ```bash
-python3.14 -m venv .venv-ha && .venv-ha/bin/pip install "pytest-homeassistant==2026.11.3" pytest-cov
+python3.14 -m venv .venv-ha && .venv-ha/bin/pip install "pytest-homeassistant==2026.12.0b0" pytest-cov
 ```
 
 ```bash
