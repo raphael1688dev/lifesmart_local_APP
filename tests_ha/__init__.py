@@ -4,7 +4,7 @@ Separate from `tests/`, whose conftest replaces `homeassistant.*` with
 stubs: the two cannot share one pytest run, and the harness is a pytest
 plugin that loads automatically wherever it is installed. Run this suite with
 
-    pip install "pytest-homeassistant==2026.12.0b0" pytest-cov
+    pip install "pytest-homeassistant==2026.12.0b2" pytest-cov
     python -m pytest tests_ha -o asyncio_mode=auto -p no:respx \
         --cov=custom_components/lifesmart --cov-config=tests_ha/coverage.ini
 
